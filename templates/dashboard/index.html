@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block page_title %}Platform Dashboard{% endblock %}
+
+{% block header_actions %}
+<a href="/campaigns/create/" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-xl shadow-md shadow-blue-500/20 flex items-center gap-2 transition-all">
+    <i data-lucide="plus" class="w-4 h-4"></i>
+    Create Campaign
+</a>
+<a href="/contacts/import/" class="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-sm rounded-xl flex items-center gap-2 transition-all shadow-sm">
+    <i data-lucide="upload" class="w-4 h-4"></i>
+    Import Contacts
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <!-- Top Survey Completion & Overview Banner -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <!-- Survey Used Card -->
+        <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-emerald-700">Survey Completed</span>
+                <span class="p-2 bg-emerald-50 rounded-xl text-emerald-600"><i data-lucide="check-circle-2" class="w-5 h-5"></i></span>
+            </div>
+            <div class="mt-3 flex items-baseline gap-2">
+                <span id="stat-used" class="text-3xl font-extrabold text-slate-900">...</span>
+                <span class="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">USED</span>
+            </div>
+            <div class="mt-2 text-xs text-slate-500">Matching ODK submissions confirmed</div>
+        </div>
+
+        <!-- Survey Unused Card -->
+        <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-amber-700">Survey Pending</span>
+                <span class="p-2 bg-amber-50 rounded-xl text-amber-600"><i data-lucide="clock" class="w-5 h-5"></i></span>
+            </div>
+            <div class="mt-3 flex items-baseline gap-2">
+                <span id="stat-unused" class="text-3xl font-extrabold text-slate-900">...</span>
+                <span class="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">UNUSED</span>
+            </div>
+            <div class="mt-2 text-xs text-slate-500">Eligible for automated reminders</div>
+        </div>
+
+        <!-- Completion Rate Card -->
+        <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-blue-700">Completion Rate</span>
+                <span class="p-2 bg-blue-50 rounded-xl text-blue-600"><i data-lucide="pie-chart" class="w-5 h-5"></i></span>
+            </div>
+            <div class="mt-3 flex items-baseline gap-2">
+                <span id="stat-completion-rate" class="text-3xl font-extrabold text-slate-900">...%</span>
+                <span class="text-xs text-slate-500 font-medium">Used / Total</span>
+            </div>
+            <div class="mt-3 w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                <div id="stat-completion-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- Total Contacts -->
+        <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Total Contacts</span>
+                <span class="p-2 bg-slate-100 rounded-xl text-slate-600"><i data-lucide="users" class="w-5 h-5"></i></span>
+            </div>
+            <div class="mt-3 flex items-baseline gap-2">
+                <span id="stat-total-contacts" class="text-3xl font-extrabold text-slate-900">...</span>
+            </div>
+            <div class="mt-2 text-xs text-slate-500" id="stat-groups-text">Organized in groups</div>
+        </div>
+    </div>
+
+    <!-- Secondary Metrics (Delivery, Opens, Clicks, Reminders) -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm">
+            <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Sent</span>
+            <span id="stat-sent" class="text-xl font-bold text-slate-900 mt-1 block">...</span>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm">
+            <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Delivered</span>
+            <span id="stat-delivered" class="text-xl font-bold text-slate-900 mt-1 block">...</span>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm">
+            <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Opened</span>
+            <span id="stat-opened" class="text-xl font-bold text-slate-900 mt-1 block">...</span>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm">
+            <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Clicked</span>
+            <span id="stat-clicked" class="text-xl font-bold text-slate-900 mt-1 block">...</span>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm">
+            <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Active Reminders</span>
+            <span id="stat-active-reminders" class="text-xl font-bold text-indigo-600 mt-1 block">...</span>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm">
+            <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Unsubscribed</span>
+            <span id="stat-unsub" class="text-xl font-bold text-slate-900 mt-1 block">...</span>
+        </div>
+    </div>
+
+    <!-- Active Campaigns Table (Section 78) -->
+    <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+            <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                <i data-lucide="radio" class="w-4 h-4 text-emerald-500"></i>
+                Active & Scheduled Survey Campaigns
+            </h2>
+            <a href="/campaigns/" class="text-xs font-semibold text-blue-600 hover:text-blue-700">View All Campaigns &rarr;</a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        <th class="py-3.5 px-6">Campaign</th>
+                        <th class="py-3.5 px-6 text-right">Recipients</th>
+                        <th class="py-3.5 px-6 text-center">Used / Unused</th>
+                        <th class="py-3.5 px-6 text-right">Completion</th>
+                        <th class="py-3.5 px-6">Next Reminder</th>
+                        <th class="py-3.5 px-6 text-center">Status</th>
+                        <th class="py-3.5 px-6 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="active-campaigns-tbody" class="divide-y divide-slate-100">
+                    <tr><td colspan="7" class="py-8 text-center text-slate-400">Loading active campaigns...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    async function loadDashboard() {
+        try {
+            const resp = await fetch('/api/dashboard/stats/');
+            const data = await resp.json();
+
+            document.getElementById('stat-used').textContent = data.used_contacts.toLocaleString();
+            document.getElementById('stat-unused').textContent = data.unused_contacts.toLocaleString();
+            document.getElementById('stat-total-contacts').textContent = data.total_contacts.toLocaleString();
+            document.getElementById('stat-completion-rate').textContent = `${data.completion_rate}%`;
+            document.getElementById('stat-completion-bar').style.width = `${Math.min(data.completion_rate, 100)}%`;
+            document.getElementById('stat-groups-text').textContent = `In ${data.total_groups} contact groups`;
+
+            document.getElementById('stat-sent').textContent = data.emails_sent.toLocaleString();
+            document.getElementById('stat-delivered').textContent = data.delivered.toLocaleString();
+            document.getElementById('stat-opened').textContent = data.opened.toLocaleString();
+            document.getElementById('stat-clicked').textContent = data.clicked.toLocaleString();
+            document.getElementById('stat-active-reminders').textContent = data.active_reminder_campaigns;
+            document.getElementById('stat-unsub').textContent = data.unsubscribed.toLocaleString();
+
+            const tbody = document.getElementById('active-campaigns-tbody');
+            if (!data.active_campaigns || data.active_campaigns.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">No active campaigns. Create a campaign to start sending survey reminders.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = data.active_campaigns.map(c => `
+                <tr class="hover:bg-slate-50/80 transition-colors">
+                    <td class="py-4 px-6 font-semibold text-slate-900">
+                        <a href="/campaigns/${c.id}/report/" class="hover:text-blue-600">${c.name}</a>
+                    </td>
+                    <td class="py-4 px-6 text-right font-medium text-slate-700">${c.recipients.toLocaleString()}</td>
+                    <td class="py-4 px-6 text-center">
+                        <span class="inline-block px-2 py-0.5 rounded text-xs font-semibold badge-used mr-1">${c.used} Used</span>
+                        <span class="inline-block px-2 py-0.5 rounded text-xs font-semibold badge-unused">${c.unused} Unused</span>
+                    </td>
+                    <td class="py-4 px-6 text-right font-bold text-slate-800">${c.completion_rate}%</td>
+                    <td class="py-4 px-6 text-xs text-slate-600">${c.next_reminder ? new Date(c.next_reminder).toLocaleDateString() : 'None scheduled'}</td>
+                    <td class="py-4 px-6 text-center">
+                        <span class="px-2.5 py-1 rounded-full text-xs font-semibold ${c.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}">${c.status}</span>
+                    </td>
+                    <td class="py-4 px-6 text-right">
+                        <a href="/campaigns/${c.id}/report/" class="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg">View Report &rarr;</a>
+                    </td>
+                </tr>
+            `).join('');
+            lucide.createIcons();
+        } catch (err) {
+            console.error(err);
+        }
+    }
+    loadDashboard();
+</script>
+{% endblock %}

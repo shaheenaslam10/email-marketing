@@ -1,0 +1,1697 @@
+{% extends "base.html" %}
+
+{% block page_title %}
+{% if campaign %}Edit Campaign: {{ campaign.name }}{% else %}Create Survey Campaign{% endif %}
+{% endblock %}
+
+{% block header_actions %}
+<div class="flex items-center gap-2.5">
+    <a href="/campaigns/" class="px-3.5 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 font-semibold text-xs rounded-xl transition-all flex items-center gap-1.5">
+        &larr; Exit
+    </a>
+    <button type="button" onclick="saveCampaignAsDraft()" id="top-btn-save-draft" class="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all">
+        <i data-lucide="file-text" class="w-3.5 h-3.5 text-slate-500"></i>
+        Save as Draft
+    </button>
+    <button type="button" onclick="openScheduleModal()" id="top-btn-save-send" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 flex items-center gap-1.5 transition-all">
+        <i data-lucide="send" class="w-3.5 h-3.5"></i>
+        Save & Send / Schedule...
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-8 pb-12">
+    <!-- Brevo-style Horizontal Wizard Step Bar -->
+    <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 overflow-x-auto">
+        <div class="flex items-center justify-between min-w-[700px] text-xs font-semibold">
+            <div id="wz-tab-1" class="wz-step-item cursor-pointer flex items-center gap-1.5 text-blue-600 font-bold" onclick="setWizardStep(1)">
+                <span class="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[11px]">1</span>
+                Setup
+            </div>
+            <div class="h-0.5 w-6 bg-slate-200"></div>
+            <div id="wz-tab-2" class="wz-step-item cursor-pointer flex items-center gap-1.5 text-slate-400" onclick="setWizardStep(2)">
+                <span class="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[11px]">2</span>
+                Sender
+            </div>
+            <div class="h-0.5 w-6 bg-slate-200"></div>
+            <div id="wz-tab-3" class="wz-step-item cursor-pointer flex items-center gap-1.5 text-slate-400" onclick="setWizardStep(3)">
+                <span class="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[11px]">3</span>
+                Recipients
+            </div>
+            <div class="h-0.5 w-6 bg-slate-200"></div>
+            <div id="wz-tab-4" class="wz-step-item cursor-pointer flex items-center gap-1.5 text-slate-400" onclick="setWizardStep(4)">
+                <span class="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[11px]">4</span>
+                Subject
+            </div>
+            <div class="h-0.5 w-6 bg-slate-200"></div>
+            <div id="wz-tab-5" class="wz-step-item cursor-pointer flex items-center gap-1.5 text-slate-400" onclick="setWizardStep(5)">
+                <span class="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[11px]">5</span>
+                Design
+            </div>
+            <div class="h-0.5 w-6 bg-slate-200"></div>
+            <div id="wz-tab-6" class="wz-step-item cursor-pointer flex items-center gap-1.5 text-slate-400" onclick="setWizardStep(6)">
+                <span class="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[11px]">6</span>
+                Reminders
+            </div>
+            <div class="h-0.5 w-6 bg-slate-200"></div>
+            <div id="wz-tab-7" class="wz-step-item cursor-pointer flex items-center gap-1.5 text-slate-400" onclick="setWizardStep(7)">
+                <span class="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[11px]">7</span>
+                Preview & Test
+            </div>
+            <div class="h-0.5 w-6 bg-slate-200"></div>
+            <div id="wz-tab-8" class="wz-step-item cursor-pointer flex items-center gap-1.5 text-slate-400" onclick="setWizardStep(8)">
+                <span class="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[11px]">8</span>
+                Review & Send
+            </div>
+        </div>
+    </div>
+
+    <!-- WIZARD STEP 1: SETUP (Section 28) -->
+    <div id="wz-step-1" class="wz-content-step bg-white p-8 rounded-3xl border border-slate-200/80 shadow-sm space-y-6">
+        <div>
+            <h2 class="text-lg font-bold text-slate-900">1. Campaign Setup</h2>
+            <p class="text-slate-500 text-xs mt-1">Configure campaign type and general research project information.</p>
+        </div>
+        <div class="space-y-4 text-sm max-w-2xl">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Campaign Name *</label>
+                <input type="text" id="wz-name" required value="{{ campaign.name|default:'Pulse Survey 2026' }}" placeholder="e.g. Pulse Survey 2026" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Campaign Type</label>
+                <select id="wz-type" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                    <option value="SURVEY_REMINDER" {% if campaign.campaign_type == 'SURVEY_REMINDER' or not campaign %}selected{% endif %}>Survey Campaign with Automated Reminders (Brevo + ODK Central)</option>
+                    <option value="STANDARD" {% if campaign.campaign_type == 'STANDARD' %}selected{% endif %}>Standard One-Off Email Campaign</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Internal Description</label>
+                <textarea id="wz-desc" rows="3" placeholder="Notes for research team" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">{{ campaign.description|default:'' }}</textarea>
+            </div>
+        </div>
+        <div class="flex justify-end pt-4 border-t border-slate-100">
+            <button onclick="setWizardStep(2)" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-md">Next: Sender &rarr;</button>
+        </div>
+    </div>
+
+    <!-- WIZARD STEP 2: SENDER (Section 29) -->
+    <div id="wz-step-2" class="wz-content-step hidden bg-white p-8 rounded-3xl border border-slate-200/80 shadow-sm space-y-6">
+        <div>
+            <h2 class="text-lg font-bold text-slate-900">2. Select Sender Account</h2>
+            <p class="text-slate-500 text-xs mt-1">Select the sender profile (SMTP, Brevo, SES, Mailgun, or Internal Sandbox).</p>
+        </div>
+        <div class="space-y-4 text-sm max-w-2xl">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Sender Profile *</label>
+                <select id="wz-sender" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                    {% for s in senders %}
+                    <option value="{{ s.id }}" {% if campaign.sender_id == s.id %}selected{% endif %}>{{ s.name }} &lt;{{ s.email }}&gt; ({{ s.get_provider_type_display }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Connect to ODK Central Entity List (Optional)</label>
+                <select id="wz-odk-dataset" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                    <option value="">-- None / Manual Status Only --</option>
+                    {% for d in odk_datasets %}
+                    <option value="{{ d.id }}" {% if campaign.odk_dataset_id == d.id %}selected{% endif %}>{{ d.project.name }} &rarr; {{ d.name }} ({{ d.entities_count }} entities{% if d.used_count %}, {{ d.used_count }} used{% endif %})</option>
+                    {% endfor %}
+                </select>
+                <span class="text-[11px] text-slate-400 mt-1 block">Entities in this list marked as USED will automatically update respondent contacts to USED and stop automated reminders.</span>
+            </div>
+        </div>
+        <div class="flex justify-between pt-4 border-t border-slate-100">
+            <button onclick="setWizardStep(1)" class="px-5 py-2.5 border border-slate-200 rounded-xl text-slate-700 font-semibold hover:bg-slate-50 text-sm">Back</button>
+            <button onclick="setWizardStep(3)" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-md">Next: Recipients &rarr;</button>
+        </div>
+    </div>
+
+    <!-- WIZARD STEP 3: RECIPIENTS (Section 30 & 31) -->
+    <div id="wz-step-3" class="wz-content-step hidden bg-white p-8 rounded-3xl border border-slate-200/80 shadow-sm space-y-6">
+        <div>
+            <h2 class="text-lg font-bold text-slate-900">3. Select Target Recipients</h2>
+            <p class="text-slate-500 text-xs mt-1">Select respondent groups and initial dispatch filters.</p>
+        </div>
+        <div class="space-y-4 text-sm max-w-2xl">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Contact Groups *</label>
+                <div class="space-y-2 border border-slate-200 rounded-2xl p-4 bg-slate-50/50 max-h-56 overflow-y-auto">
+                    {% for g in groups %}
+                    <label class="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-300 transition-colors">
+                        <input type="checkbox" name="wz_groups" value="{{ g.id }}" class="wz-group-checkbox rounded text-blue-600"
+                            {% if campaign %}
+                                {% if g.id in selected_group_ids %}checked{% endif %}
+                            {% else %}
+                                {% if forloop.first %}checked{% endif %}
+                            {% endif %}>
+                        <div class="flex-1 flex items-center justify-between text-xs">
+                            <span class="font-bold text-slate-800">{{ g.name }}</span>
+                            <span class="text-slate-500">{{ g.contact_count }} contacts ({{ g.unused_count }} Unused)</span>
+                        </div>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Initial Email Recipients Rule (Section 31)</label>
+                <select id="wz-init-rule" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                    <option value="UNUSED_ONLY" {% if campaign.initial_recipient_rule == 'UNUSED_ONLY' or not campaign %}selected{% endif %}>Unused contacts only (Recommended for surveys)</option>
+                    <option value="ALL_VALID" {% if campaign.initial_recipient_rule == 'ALL_VALID' %}selected{% endif %}>All selected valid contacts</option>
+                </select>
+            </div>
+        </div>
+        <div class="flex justify-between pt-4 border-t border-slate-100">
+            <button onclick="setWizardStep(2)" class="px-5 py-2.5 border border-slate-200 rounded-xl text-slate-700 font-semibold hover:bg-slate-50 text-sm">Back</button>
+            <button onclick="setWizardStep(4)" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-md">Next: Subject &rarr;</button>
+        </div>
+    </div>
+
+    <!-- WIZARD STEP 4: SUBJECT (Section 32) -->
+    <div id="wz-step-4" class="wz-content-step hidden bg-white p-8 rounded-3xl border border-slate-200/80 shadow-sm space-y-6">
+        <div>
+            <h2 class="text-lg font-bold text-slate-900">4. Email Subject & Preview Text</h2>
+            <p class="text-slate-500 text-xs mt-1">Variables are allowed in both subject and preview text.</p>
+        </div>
+        <div class="space-y-4 text-sm max-w-2xl">
+            <div>
+                <div class="flex items-center justify-between mb-1.5">
+                    <label class="block text-xs font-bold text-slate-700 uppercase">Subject Line *</label>
+                    <div class="flex items-center gap-1">
+                        <span class="text-[11px] text-slate-400">Insert:</span>
+                        {% verbatim %}
+                        <button type="button" onclick="insertSubjectVar('{{job_id}}')" class="text-[11px] font-mono bg-slate-100 hover:bg-blue-50 hover:text-blue-600 px-1.5 py-0.5 rounded font-bold">{{job_id}}</button>
+                        <button type="button" onclick="insertSubjectVar('{{first_name}}')" class="text-[11px] font-mono bg-slate-100 hover:bg-blue-50 hover:text-blue-600 px-1.5 py-0.5 rounded font-bold">{{first_name}}</button>
+                        <button type="button" onclick="insertSubjectVar('{{url}}')" class="text-[11px] font-mono bg-slate-100 hover:bg-blue-50 hover:text-blue-600 px-1.5 py-0.5 rounded font-bold">{{url}}</button>
+                        {% endverbatim %}
+                    </div>
+                </div>
+                <input type="text" id="wz-subject" required value="{% if campaign %}{{ campaign.subject }}{% elif selected_template %}{{ selected_template.subject }}{% else %}Pulse Survey 2026 – {% verbatim %}{{job_id}}{% endverbatim %}{% endif %}" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Preview Text (Snippet)</label>
+                <input type="text" id="wz-preview-text" value="{% if campaign %}{{ campaign.preview_text|default:'' }}{% elif selected_template %}{{ selected_template.preview_text|default:'' }}{% else %}Your survey credentials and invitation details{% endif %}" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+            </div>
+        </div>
+        <div class="flex justify-between pt-4 border-t border-slate-100">
+            <button onclick="setWizardStep(3)" class="px-5 py-2.5 border border-slate-200 rounded-xl text-slate-700 font-semibold hover:bg-slate-50 text-sm">Back</button>
+            <button onclick="setWizardStep(5)" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-md">Next: Design Email &rarr;</button>
+        </div>
+    </div>
+
+    <!-- WIZARD STEP 5: DESIGN (Section 33, 34, 35) -->
+    <div id="wz-step-5" class="wz-content-step hidden bg-white p-8 rounded-3xl border border-slate-200/80 shadow-sm space-y-5">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <h2 class="text-lg font-bold text-slate-900">5. Design Email Content</h2>
+                <p class="text-slate-500 text-xs mt-1">Compose your survey email or insert predefined respondent variables.</p>
+            </div>
+            <!-- Insert Variable & Tracked URL Buttons (Requirement 1) -->
+            <div class="flex items-center gap-2.5 flex-wrap">
+                <button type="button" onclick="openTrackedUrlModal('wizard')" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition-all cursor-pointer" title="Insert Tracked URL with unique per-recipient short link">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                    <span>Insert Tracked URL</span>
+                </button>
+                <div class="h-5 w-px bg-slate-200 hidden sm:block"></div>
+                <div class="flex items-center gap-2">
+                    <label class="text-xs font-bold text-slate-500 uppercase">Insert Variable:</label>
+                    <select id="var-dropdown" onchange="insertEditorVariable(this.value); this.value='';" class="px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl text-xs font-bold focus:outline-none cursor-pointer shadow-sm">
+                        <option value="">Insert Variable &#9660;</option>
+                        <optgroup label="Standard Respondent Fields">
+                            <option value="{% verbatim %}{{first_name}}{% endverbatim %}">First Name (&#123;&#123;first_name&#125;&#125;)</option>
+                            <option value="{% verbatim %}{{last_name}}{% endverbatim %}">Last Name (&#123;&#123;last_name&#125;&#125;)</option>
+                            <option value="{% verbatim %}{{name}}{% endverbatim %}">Full Name (&#123;&#123;name&#125;&#125;)</option>
+                            <option value="{% verbatim %}{{email}}{% endverbatim %}">Email (&#123;&#123;email&#125;&#125;)</option>
+                            <option value="{% verbatim %}{{phone}}{% endverbatim %}">Phone (&#123;&#123;phone&#125;&#125;)</option>
+                            <option value="{% verbatim %}{{url}}{% endverbatim %}">Survey URL (&#123;&#123;url&#125;&#125;)</option>
+                            <option value="{% verbatim %}{{survey_url}}{% endverbatim %}">Survey Link (&#123;&#123;survey_url&#125;&#125;)</option>
+                            <option value="{% verbatim %}{{login_password}}{% endverbatim %}">Login Password (&#123;&#123;login_password&#125;&#125;)</option>
+                            <option value="{% verbatim %}{{job_id}}{% endverbatim %}">Job ID / UUID (&#123;&#123;job_id&#125;&#125;)</option>
+                            <option value="{% verbatim %}{{status}}{% endverbatim %}">Survey Status (&#123;&#123;status&#125;&#125;)</option>
+                            <option value="{% verbatim %}{{unsubscribe_url}}{% endverbatim %}">Unsubscribe URL (&#123;&#123;unsubscribe_url&#125;&#125;)</option>
+                        </optgroup>
+                        {% if group_custom_fields %}
+                        <optgroup label="Group Custom Fields">
+                            {% for f in group_custom_fields %}
+                            <option value="{% templatetag openvariable %}{{ f.slug }}{% templatetag closevariable %}">{{ f.name }} (&#123;&#123;{{ f.slug }}&#125;&#125;)</option>
+                            {% endfor %}
+                        </optgroup>
+                        {% endif %}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Template Selector Banner -->
+        <div class="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-2.5">
+                <div class="p-2 bg-blue-100 text-blue-700 rounded-xl">
+                    <i data-lucide="layout-template" class="w-4 h-4"></i>
+                </div>
+                <div>
+                    <span class="text-xs font-bold text-slate-800 block">Choose Saved Template</span>
+                    <span class="text-[11px] text-slate-500">Pick a pre-saved template to load subject and content</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <select id="wz-template-select" onchange="applySavedTemplate(this.value)" class="px-3.5 py-1.5 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">-- Choose Template --</option>
+                    {% for t in templates %}
+                    <option value="{{ t.id }}" {% if selected_template and selected_template.id == t.id %}selected{% endif %}>{{ t.name }}{% if t.category %} [{{ t.category }}]{% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <!-- Quill Editor -->
+        <div class="border border-slate-200 rounded-2xl overflow-hidden shadow-inner bg-slate-50/20">
+            <div id="quill-editor" style="min-height: 280px; font-size: 14px;">
+                {% if campaign.html_content %}
+                {{ campaign.html_content|safe }}
+                {% elif selected_template %}
+                {{ selected_template.html_content|safe }}
+                {% else %}
+                {% verbatim %}
+                <p>Dear {{first_name}},</p>
+                <p>You have been selected to participate in our survey.</p>
+                <p>Your login details are:</p>
+                <p><strong>Email:</strong> {{email}}<br>
+                <strong>Password:</strong> {{login_password}}<br>
+                <strong>Job ID:</strong> {{job_id}}</p>
+                <p><strong>Survey URL:</strong> {{url}}</p>
+                <p>Please complete your survey using the provided credentials:</p>
+                <p><a href="{{url}}">Start Survey</a></p>
+                <p style="color:#64748b;font-size:12px;">If you do not wish to participate, you can <a href="{{unsubscribe_url}}">unsubscribe here</a>.</p>
+                <p>Regards,<br><strong>Research Team</strong></p>
+                {% endverbatim %}
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Auto-save as Template Option -->
+        <div class="p-3 bg-blue-50/40 border border-blue-100 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <label class="flex items-center gap-2.5 cursor-pointer select-none">
+                <input type="checkbox" id="wz-save-as-template" class="rounded text-blue-600 w-4 h-4" checked onchange="toggleTemplateNameInput(this.checked)">
+                <div>
+                    <span class="text-xs font-bold text-slate-800 block">Auto-Save as Reusable Template</span>
+                    <span class="text-[11px] text-slate-500">Saves this email content to your templates library for next/new campaigns</span>
+                </div>
+            </label>
+            <div id="wz-template-name-wrap" class="flex items-center gap-2">
+                <label class="text-[11px] font-bold text-slate-400 uppercase whitespace-nowrap">Template Name:</label>
+                <input type="text" id="wz-template-name" placeholder="e.g. Survey Invitation" value="{% if campaign %}{{ campaign.name }}{% else %}Survey Invitation{% endif %}" class="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 w-56">
+            </div>
+        </div>
+
+        <div class="flex justify-between pt-4 border-t border-slate-100">
+            <button onclick="setWizardStep(4)" class="px-5 py-2.5 border border-slate-200 rounded-xl text-slate-700 font-semibold hover:bg-slate-50 text-sm">Back</button>
+            <button onclick="setWizardStep(6)" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-md">Next: Reminder Rules &rarr;</button>
+        </div>
+    </div>
+
+    <!-- WIZARD STEP 6: REMINDERS (Section 39, 40, 41, 46) -->
+    <div id="wz-step-6" class="wz-content-step hidden bg-white p-8 rounded-3xl border border-slate-200/80 shadow-sm space-y-6">
+        <div>
+            <h2 class="text-lg font-bold text-slate-900">6. Automated Survey Reminders</h2>
+            <p class="text-slate-500 text-xs mt-1">Configure automated follow-ups sent strictly to contacts whose status is UNUSED.</p>
+        </div>
+
+        <div class="space-y-5 text-sm max-w-2xl">
+            <!-- Toggle Reminders -->
+            <label class="flex items-center gap-3 p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 cursor-pointer">
+                <input type="checkbox" id="wz-rem-enabled" class="rounded text-indigo-600 w-5 h-5" {% if campaign and campaign.reminder_config and not campaign.reminder_config.enabled %}{% else %}checked{% endif %} onchange="toggleReminderFields(this.checked)">
+                <div>
+                    <span class="font-bold text-indigo-950 block">Enable Automated Reminders</span>
+                    <span class="text-xs text-indigo-700">System will automatically sync ODK Central before each cycle and send reminders ONLY to UNUSED respondents.</span>
+                </div>
+            </label>
+
+            <div id="reminder-fields" class="space-y-4 pt-2">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Frequency: Send Every</label>
+                        <div class="flex gap-2">
+                            <input type="number" id="wz-rem-interval-val" value="{{ campaign.reminder_config.interval_value|default:2 }}" min="1" class="w-24 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold">
+                            <select id="wz-rem-interval-unit" class="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium">
+                                <option value="DAYS" {% if campaign.reminder_config.interval_unit == 'DAYS' or not campaign %}selected{% endif %}>Days</option>
+                                <option value="WEEKS" {% if campaign.reminder_config.interval_unit == 'WEEKS' %}selected{% endif %}>Weeks</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Maximum Reminders</label>
+                        <input type="number" id="wz-rem-max" value="{{ campaign.reminder_config.max_reminders|default:10 }}" min="1" max="30" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold">
+                    </div>
+                </div>
+
+                <div class="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 space-y-2 text-xs text-emerald-900">
+                    <div class="font-bold flex items-center gap-2">
+                        <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
+                        Automated Safety Checks Enabled
+                    </div>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li>ODK Central synchronization runs automatically before every reminder cycle.</li>
+                        <li>Workers verify contact status from database immediately before dispatch.</li>
+                        <li>Reminders stop immediately the moment a respondent status becomes USED.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-between pt-4 border-t border-slate-100">
+            <button onclick="setWizardStep(5)" class="px-5 py-2.5 border border-slate-200 rounded-xl text-slate-700 font-semibold hover:bg-slate-50 text-sm">Back</button>
+            <button onclick="setWizardStep(7)" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-md">Next: Preview & Test &rarr;</button>
+        </div>
+    </div>
+
+    <!-- WIZARD STEP 7: PREVIEW & TEST (Section 37 & 38) -->
+    <div id="wz-step-7" class="wz-content-step hidden bg-white p-8 rounded-3xl border border-slate-200/80 shadow-sm space-y-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <h2 class="text-lg font-bold text-slate-900">7. Preview as Contact & Send Test</h2>
+                <p class="text-slate-500 text-xs mt-1">Inspect exact rendered HTML with decrypted respondent credentials (Section 37).</p>
+            </div>
+            <button onclick="openTestEmailModal()" class="px-4 py-2 bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 font-bold text-xs rounded-xl flex items-center gap-2">
+                <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                Send Test Email
+            </button>
+        </div>
+
+        <!-- Contact Simulator Selector -->
+        <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div class="flex items-center gap-2.5 flex-1 min-w-0">
+                <div class="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
+                    <i data-lucide="user-check" class="w-4 h-4"></i>
+                </div>
+                <label class="font-bold text-slate-800 whitespace-nowrap">Preview as Contact:</label>
+                <select id="preview-contact-select" onchange="onPreviewContactChange(this.value)" class="w-full sm:max-w-md px-3.5 py-2 bg-white border border-slate-300 rounded-xl font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs text-xs">
+                    <option value="">Loading recipient contacts...</option>
+                </select>
+            </div>
+            <div class="flex items-center gap-2 self-end sm:self-auto">
+                <span id="preview-contact-count" class="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-full font-bold text-[11px]">Loading...</span>
+                <button type="button" onclick="loadPreviewContacts().then(() => refreshPreview())" class="p-1.5 hover:bg-slate-200/60 rounded-lg text-slate-500 hover:text-slate-800 transition-colors" title="Refresh contact list">
+                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Rendered Email Container -->
+        <div class="border border-slate-200 rounded-2xl p-6 bg-slate-50/30">
+            <div class="mb-3 pb-3 border-b border-slate-200 text-xs">
+                <div><strong>Subject:</strong> <span id="prev-subject-text" class="font-semibold text-slate-900">...</span></div>
+            </div>
+            <div id="prev-body-html" class="prose prose-sm max-w-none text-slate-800 bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+                Loading preview...
+            </div>
+        </div>
+
+        <div class="flex justify-between pt-4 border-t border-slate-100">
+            <button onclick="setWizardStep(6)" class="px-5 py-2.5 border border-slate-200 rounded-xl text-slate-700 font-semibold hover:bg-slate-50 text-sm">Back</button>
+            <button onclick="setWizardStep(8)" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-md">Next: Review & Launch &rarr;</button>
+        </div>
+    </div>
+
+    <!-- WIZARD STEP 8: REVIEW & LAUNCH (Section 97) -->
+    <div id="wz-step-8" class="wz-content-step hidden bg-white p-8 rounded-3xl border border-slate-200/80 shadow-sm space-y-6">
+        <div>
+            <h2 class="text-lg font-bold text-slate-900">8. Campaign Review & Dispatch</h2>
+            <p class="text-slate-500 text-xs mt-1">Review all configuration parameters before launching.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                <div class="font-bold text-slate-700 uppercase">Campaign Details</div>
+                <div><strong>Name:</strong> <span id="rev-name"></span></div>
+                <div><strong>Type:</strong> <span id="rev-type"></span></div>
+                <div><strong>Subject:</strong> <span id="rev-subject"></span></div>
+                <div><strong>Sender:</strong> <span id="rev-sender"></span></div>
+            </div>
+            <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                <div class="font-bold text-slate-700 uppercase">Automation & Audience</div>
+                <div><strong>ODK Entity List:</strong> <span id="rev-odk"></span></div>
+                <div><strong>Automated Reminders:</strong> <span id="rev-reminders"></span></div>
+                <div><strong>Recipient Rule:</strong> <span id="rev-rule"></span></div>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between pt-6 border-t border-slate-100 flex-wrap gap-3">
+            <button onclick="setWizardStep(7)" class="px-5 py-2.5 border border-slate-200 rounded-xl text-slate-700 font-semibold hover:bg-slate-50 text-sm">Back</button>
+            <div class="flex items-center gap-3">
+                <button type="button" onclick="saveCampaignAsDraft()" id="btn-step8-draft" class="px-5 py-3.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-sm rounded-xl transition-all shadow-xs flex items-center gap-2">
+                    <i data-lucide="file-text" class="w-4 h-4 text-slate-500"></i>
+                    Save as Draft
+                </button>
+                <button type="button" onclick="openScheduleModal()" id="btn-launch" class="px-8 py-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-extrabold text-sm rounded-xl shadow-xl shadow-emerald-600/30 flex items-center gap-2 transition-all">
+                    <i data-lucide="calendar-clock" class="w-4 h-4"></i>
+                    Schedule / Launch Campaign & Reminders
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Brevo-Style Schedule & Dispatch Modal -->
+<div id="schedule-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <!-- Mint Green Header (Matches Design) -->
+        <div class="bg-[#dcfce7] px-6 py-5 border-b border-emerald-100 flex items-center justify-between">
+            <h3 class="text-2xl font-black text-slate-900 tracking-tight">Schedule</h3>
+            <button type="button" onclick="closeScheduleModal()" class="text-slate-500 hover:text-slate-800 p-1.5 rounded-full hover:bg-emerald-200/60 transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="p-6 space-y-4 text-sm max-h-[75vh] overflow-y-auto">
+            <div class="font-bold text-slate-900 text-base">When would you like to send the campaign?</div>
+
+            <!-- Option 1: Send now -->
+            <label class="flex items-start gap-3.5 p-3.5 rounded-2xl border border-slate-200/90 hover:bg-slate-50/80 cursor-pointer transition-all has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50/40">
+                <input type="radio" name="wz_send_mode" value="now" checked onchange="onScheduleModeChange()" class="mt-1 text-emerald-600 focus:ring-emerald-500">
+                <div class="space-y-0.5">
+                    <span class="font-bold text-slate-900 text-sm">Send now</span>
+                    <p class="text-xs text-slate-500">Dispatch campaign invitations immediately to all eligible contacts.</p>
+                </div>
+            </label>
+
+            <!-- Option 2: Schedule for later -->
+            <label class="flex items-start gap-3.5 p-3.5 rounded-2xl border border-slate-200/90 hover:bg-slate-50/80 cursor-pointer transition-all has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50/40">
+                <input type="radio" name="wz_send_mode" value="schedule" onchange="onScheduleModeChange()" class="mt-1 text-emerald-600 focus:ring-emerald-500">
+                <div class="space-y-2 flex-1">
+                    <span class="font-bold text-slate-900 text-sm">Schedule for later</span>
+                    <div id="schedule-datetime-container" class="hidden pt-1 space-y-1">
+                        <label class="block text-[11px] font-bold uppercase text-slate-600">Select Date & Time *</label>
+                        <input type="datetime-local" id="schedule-datetime-input" class="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none shadow-2xs">
+                        <p class="text-[11px] text-slate-400">The campaign will be queued and dispatched automatically at this time.</p>
+                    </div>
+                </div>
+            </label>
+
+            <!-- Option 3: Send at best time -->
+            <label class="flex items-center justify-between p-3.5 rounded-2xl border border-slate-200/90 hover:bg-slate-50/80 cursor-pointer transition-all has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50/40">
+                <div class="flex items-center gap-3.5">
+                    <input type="radio" name="wz_send_mode" value="best_time" onchange="onScheduleModeChange()" class="text-emerald-600 focus:ring-emerald-500">
+                    <span class="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                        Send at best time
+                        <span title="Aura AI analyzes past opening patterns to deliver at peak engagement hours.">
+                            <i data-lucide="help-circle" class="w-4 h-4 text-slate-400 inline"></i>
+                        </span>
+                    </span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 text-blue-700 font-bold text-xs rounded-full shadow-2xs">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-indigo-500"></i> Powered by Aura
+                    </span>
+                    <span class="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shadow-2xs" title="Smart Optimization">
+                        <i data-lucide="crown" class="w-3.5 h-3.5"></i>
+                    </span>
+                </div>
+            </label>
+
+            <!-- Option 4: Send in batches (With Exact Requested Text) -->
+            <label class="flex flex-col p-4 rounded-2xl border border-slate-200/90 hover:bg-slate-50/80 cursor-pointer transition-all has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50/40 space-y-2.5">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3.5">
+                        <input type="radio" name="wz_send_mode" value="batches" onchange="onScheduleModeChange()" class="text-emerald-600 focus:ring-emerald-500">
+                        <span class="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                            Send in batches
+                            <span title="Split large recipient lists into smaller paced dispatches to protect domain reputation and improve delivery.">
+                                <i data-lucide="help-circle" class="w-4 h-4 text-slate-400 inline"></i>
+                            </span>
+                        </span>
+                    </div>
+                    <span class="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shadow-2xs" title="Deliverability Pace Control">
+                        <i data-lucide="crown" class="w-3.5 h-3.5"></i>
+                    </span>
+                </div>
+
+                <!-- Pace Guidance Box -->
+                <div class="pl-7 space-y-2.5">
+                    <div class="p-3 bg-white/90 border border-slate-200/90 rounded-xl text-xs space-y-1 shadow-2xs">
+                        <div class="font-bold text-slate-800 flex items-center gap-1.5">
+                            <i data-lucide="gauge" class="w-3.5 h-3.5 text-emerald-600"></i>
+                            Control your sending pace
+                        </div>
+                        <p class="text-slate-600 leading-relaxed">
+                            Split large volumes of emails into smaller batches and schedule them throughout the day. Improve deliverability and catch issues early.
+                        </p>
+                    </div>
+
+                    <div id="batches-config-container" class="hidden grid grid-cols-2 gap-3 pt-1">
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Batch Size (Emails)</label>
+                            <input type="number" id="batch-size-input" value="{{ campaign.batch_size|default:50 }}" min="1" max="10000" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Interval Between Batches</label>
+                            <select id="batch-interval-input" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500">
+                                <option value="15">Every 15 minutes</option>
+                                <option value="30" selected>Every 30 minutes</option>
+                                <option value="60">Every 1 hour</option>
+                                <option value="120">Every 2 hours</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </label>
+
+            <!-- Option 5: Save as Draft -->
+            <label class="flex items-start gap-3.5 p-3.5 rounded-2xl border border-slate-200/90 hover:bg-slate-50/80 cursor-pointer transition-all has-[:checked]:border-slate-400 has-[:checked]:bg-slate-100/60">
+                <input type="radio" name="wz_send_mode" value="draft" onchange="onScheduleModeChange()" class="mt-1 text-slate-700 focus:ring-slate-500">
+                <div class="space-y-0.5">
+                    <span class="font-bold text-slate-900 text-sm">Save as Draft</span>
+                    <p class="text-xs text-slate-500">Save all campaign settings and template content without sending.</p>
+                </div>
+            </label>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="p-5 bg-slate-50 rounded-b-3xl border-t border-slate-100 flex items-center justify-between">
+            <button type="button" onclick="closeScheduleModal()" class="px-4 py-2.5 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-white text-xs transition-colors">
+                Cancel
+            </button>
+            <button type="button" id="btn-confirm-schedule" onclick="executeScheduleSubmission()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/20 text-xs flex items-center gap-2 transition-all">
+                <i data-lucide="send" id="schedule-confirm-icon" class="w-4 h-4"></i>
+                <span id="schedule-confirm-text">Send Campaign Now</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Send Test Email & Testing Groups Modal (Section 38) -->
+<div id="test-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-xl w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <!-- Modal Header -->
+        <div class="bg-slate-50 px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+                <div class="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                    <i data-lucide="send" class="w-4 h-4"></i>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-slate-900">Send Test Email & Testing Groups</h3>
+                    <p class="text-xs text-slate-400">Validate rendered survey variables & email delivery</p>
+                </div>
+            </div>
+            <button onclick="closeTestModal()" class="text-slate-400 hover:text-slate-600 p-1"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+
+        <div class="p-6 space-y-4 text-xs">
+            <!-- Mode Toggle: Direct Emails vs Testing Group -->
+            <div class="flex items-center bg-slate-100 p-1 rounded-2xl">
+                <button type="button" onclick="setTestModalMode('direct')" id="test-tab-direct" class="flex-1 py-1.5 px-3 rounded-xl font-bold text-xs transition-all bg-white text-indigo-600 shadow-sm">
+                    Enter Email(s)
+                </button>
+                <button type="button" onclick="setTestModalMode('group')" id="test-tab-group" class="flex-1 py-1.5 px-3 rounded-xl font-bold text-xs transition-all text-slate-600 hover:text-slate-900">
+                    Testing Group
+                </button>
+            </div>
+
+            <!-- Mode 1: Direct / Multi-email input -->
+            <div id="test-mode-direct" class="space-y-2">
+                <div class="flex items-center justify-between">
+                    <label class="block text-xs font-bold text-slate-700 uppercase">Recipient Email Address(es) *</label>
+                    <span id="test-email-count-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">1 recipient</span>
+                </div>
+                <textarea id="test-email-input" rows="2" oninput="updateTestEmailCount()" placeholder="Enter one or more email addresses separated by commas or new lines (e.g. wasif@iriscommunications.com.pk, colleague@example.com)" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-xs leading-relaxed">wasif@iriscommunications.com.pk</textarea>
+                <div class="flex items-center justify-between text-[11px] text-slate-400">
+                    <span>Supports comma, semicolon, or line breaks for multi-email dispatch.</span>
+                    <button type="button" onclick="insertQuickTestEmail('wasif@iriscommunications.com.pk')" class="text-indigo-600 font-semibold hover:underline">Reset Default</button>
+                </div>
+            </div>
+
+            <!-- Mode 2: Testing Group Selection & Quick Creation -->
+            <div id="test-mode-group" class="hidden space-y-3">
+                <div class="flex items-center justify-between">
+                    <label class="block text-xs font-bold text-slate-700 uppercase">Select Testing Group *</label>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="deleteCurrentTestingGroup()" id="btn-delete-tg-top" class="hidden text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 font-bold text-[11px] px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shadow-sm" title="Delete currently selected testing group">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            <span>Delete Group</span>
+                        </button>
+                        <button type="button" onclick="toggleNewTestingGroupForm()" class="text-indigo-600 font-bold hover:text-indigo-800 text-xs flex items-center gap-1">
+                            <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+                            <span>+ New Testing Group</span>
+                        </button>
+                    </div>
+                </div>
+
+                <select id="test-group-select" onchange="onTestGroupChange()" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-xs">
+                    <option value="">-- Choose a Testing Group --</option>
+                </select>
+
+                <!-- Group Emails Preview Pills with Delete Option -->
+                <div id="test-group-preview" class="hidden p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2">
+                    <div class="flex items-center justify-between text-xs pb-1 border-b border-slate-200/60">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-slate-800" id="test-group-name-label">Group Members:</span>
+                            <span id="test-group-member-count" class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">0 emails</span>
+                        </div>
+                        <button type="button" onclick="deleteCurrentTestingGroup()" id="btn-delete-tg" class="text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 font-bold text-xs px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 shadow-sm" title="Delete this testing group">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            <span>Delete Group</span>
+                        </button>
+                    </div>
+                    <div id="test-group-pills" class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pt-1"></div>
+                </div>
+
+                <!-- Inline Quick Create Testing Group Form -->
+                <div id="new-test-group-box" class="hidden p-3.5 bg-indigo-50/60 border border-indigo-200/80 rounded-2xl space-y-2.5">
+                    <div class="font-bold text-slate-900 text-xs flex items-center justify-between">
+                        <span>Create New Multi-Email Testing Group</span>
+                        <button type="button" onclick="toggleNewTestingGroupForm(false)" class="text-slate-400 hover:text-slate-600">&times;</button>
+                    </div>
+                    <div>
+                        <input type="text" id="new-tg-name" placeholder="Group Name e.g. QA Review Team" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <textarea id="new-tg-emails" rows="2" placeholder="Email addresses separated by commas or lines" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+                    </div>
+                    <div class="flex items-center justify-end gap-2">
+                        <button type="button" onclick="toggleNewTestingGroupForm(false)" class="px-3 py-1 text-xs text-slate-600 font-semibold">Cancel</button>
+                        <button type="button" onclick="saveNewTestingGroup()" id="btn-save-tg" class="px-3.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow-sm">Save Group</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sender & Variable Preview Context -->
+            <div class="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5 text-[11px] text-slate-600">
+                <div class="flex items-center justify-between">
+                    <span class="font-bold text-slate-700">Dispatching via:</span>
+                    <span id="test-sender-display" class="font-semibold text-indigo-600">Configured Sender Account</span>
+                </div>
+                <div class="flex items-center justify-between text-slate-500 pt-1 border-t border-slate-200/60">
+                    <span>Sample Variables:</span>
+                    <span id="test-contact-display" class="font-medium text-slate-700">Using selected preview contact data</span>
+                </div>
+            </div>
+
+            <!-- Status / Diagnostic Feedback Box -->
+            <div id="test-modal-status-box" class="hidden p-3.5 rounded-2xl text-xs space-y-2"></div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+            <a href="/sandbox/webmail/" target="_blank" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+                <i data-lucide="inbox" class="w-3.5 h-3.5"></i>
+                Open Sandbox Webmail ↗
+            </a>
+            <div class="flex items-center gap-2">
+                <button type="button" onclick="closeTestModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-white text-xs">Close</button>
+                <button type="button" onclick="executeSendTest()" id="btn-test-send" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md shadow-indigo-600/20 text-xs flex items-center gap-1.5 transition-all">
+                    <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                    <span>Send Test</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% include "campaigns/editor_image_modal.html" %}
+{% include "campaigns/tracked_url_modal.html" %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script id="templates-json" type="application/json">{{ templates_json|safe }}</script>
+<script>
+    let quill = new Quill('#quill-editor', {
+        theme: 'snow',
+        modules: {
+            toolbar: {
+                container: [
+                    [{ 'header': [1, 2, 3, 4, false] }],
+                    ['bold', 'italic', 'underline', 'strike'],
+                    [{ 'color': [] }, { 'background': [] }],
+                    [{ 'align': [] }],
+                    [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                    ['link', 'image', 'clean']
+                ],
+                handlers: {
+                    link: function(value) {
+                        if (value) {
+                            openTrackedUrlModal('wizard');
+                        } else {
+                            quill.format('link', false);
+                        }
+                    },
+                    image: function() {
+                        openImageGifModal('wizard');
+                    }
+                }
+            }
+        }
+    });
+    window.quill = quill;
+
+    setupQuillWordPaste(quill);
+    setupQuillLineSpacing(quill);
+
+    let currentWizardStep = 1;
+    let campaignId = {{ campaign.id|default:'null' }};
+
+    let savedTemplatesList = [];
+    try {
+        const tmplEl = document.getElementById('templates-json');
+        if (tmplEl && tmplEl.textContent) {
+            savedTemplatesList = JSON.parse(tmplEl.textContent);
+        }
+    } catch (e) {
+        console.error("Failed to parse templates JSON:", e);
+    }
+    const savedTemplatesMap = {};
+    savedTemplatesList.forEach(t => {
+        if (t && t.id) {
+            savedTemplatesMap[t.id] = t;
+            savedTemplatesMap[String(t.id)] = t;
+        }
+    });
+
+    function loadHtmlIntoQuill(targetQuill, html) {
+        if (!targetQuill) return;
+        if (!html || !html.trim()) {
+            targetQuill.setText('');
+            return;
+        }
+
+        let cleanHtml = html.trim();
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(cleanHtml, 'text/html');
+            // If template has a single outer container (like <div style="..."> or <table>),
+            // unwrapping the innerHTML allows Quill's Parchment model to parse headings, paragraphs, buttons, etc.
+            if (doc.body.children.length === 1 && (doc.body.firstElementChild.tagName.toLowerCase() === 'div' || doc.body.firstElementChild.tagName.toLowerCase() === 'table')) {
+                cleanHtml = doc.body.firstElementChild.innerHTML.trim();
+            }
+        } catch (err) {
+            console.warn("DOMParser unwrap notice:", err);
+        }
+
+        try {
+            targetQuill.setContents([]);
+            targetQuill.clipboard.dangerouslyPasteHTML(0, cleanHtml, 'user');
+        } catch (e) {
+            console.warn("Quill paste error:", e);
+        }
+
+        // If clipboard paste resulted in empty content, fall back to root.innerHTML
+        if (!targetQuill.getText().trim() || targetQuill.root.innerHTML === '<p><br></p>') {
+            targetQuill.root.innerHTML = cleanHtml;
+        }
+        
+        targetQuill.update();
+    }
+
+    async function applySavedTemplate(templateId) {
+        if (!templateId) return;
+
+        let t = savedTemplatesMap[templateId] || savedTemplatesMap[String(templateId)] || savedTemplatesMap[parseInt(templateId)];
+        if (!t) {
+            try {
+                const res = await fetch(`/api/templates/${templateId}/`);
+                if (res.ok) {
+                    t = await res.json();
+                    savedTemplatesMap[t.id] = t;
+                    savedTemplatesMap[String(t.id)] = t;
+                }
+            } catch (err) {
+                console.error("Failed to fetch template from API:", err);
+            }
+        }
+
+        if (!t) {
+            console.error("Template not found for ID:", templateId);
+            return;
+        }
+
+        // Set subject in Step 4
+        const subjInput = document.getElementById('wz-subject');
+        if (subjInput && t.subject) {
+            subjInput.value = t.subject;
+        }
+
+        // Set preview text in Step 4
+        const prevInput = document.getElementById('wz-preview-text');
+        if (prevInput && t.preview_text) {
+            prevInput.value = t.preview_text;
+        }
+
+        // Load into Quill editor in Step 5
+        if (t.html_content) {
+            loadHtmlIntoQuill(quill, t.html_content);
+        }
+
+        // Update auto-save template name input in Step 5
+        const nameInput = document.getElementById('wz-template-name');
+        if (nameInput) {
+            nameInput.value = t.name;
+        }
+
+        showToast(`Template '${t.name}' loaded into editor!`, 'info');
+    }
+
+    function toggleTemplateNameInput(enabled) {
+        const wrap = document.getElementById('wz-template-name-wrap');
+        if (wrap) wrap.classList.toggle('hidden', !enabled);
+    }
+
+    function setWizardStep(step) {
+        currentWizardStep = step;
+        for (let i = 1; i <= 8; i++) {
+            const stepEl = document.getElementById(`wz-step-${i}`);
+            const tabEl = document.getElementById(`wz-tab-${i}`);
+            if (stepEl) stepEl.classList.toggle('hidden', i !== step);
+            if (tabEl) {
+                if (i === step) {
+                    tabEl.className = 'wz-step-item cursor-pointer flex items-center gap-1.5 text-blue-600 font-bold';
+                    tabEl.querySelector('span').className = 'w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[11px]';
+                } else if (i < step) {
+                    tabEl.className = 'wz-step-item cursor-pointer flex items-center gap-1.5 text-emerald-600 font-semibold';
+                    tabEl.querySelector('span').className = 'w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[11px]';
+                } else {
+                    tabEl.className = 'wz-step-item cursor-pointer flex items-center gap-1.5 text-slate-400 font-medium';
+                    tabEl.querySelector('span').className = 'w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[11px]';
+                }
+            }
+        }
+        if (step === 5) {
+            setTimeout(() => {
+                if (quill) quill.update();
+            }, 50);
+        }
+        if (step === 7) {
+            loadPreviewContacts().then(() => {
+                const sel = document.getElementById('preview-contact-select');
+                refreshPreview(sel ? sel.value : null);
+            });
+        }
+        if (step === 8) prepareReview();
+        lucide.createIcons();
+    }
+
+    function insertSubjectVar(tag) {
+        const input = document.getElementById('wz-subject');
+        input.value += ` ${tag}`;
+    }
+
+    function insertEditorVariable(tag) {
+        if (!tag) return;
+        const range = quill.getSelection(true);
+        quill.insertText(range.index, tag);
+    }
+
+    function toggleReminderFields(enabled) {
+        document.getElementById('reminder-fields').classList.toggle('opacity-50', !enabled);
+        document.getElementById('reminder-fields').classList.toggle('pointer-events-none', !enabled);
+    }
+
+    // ─── Contact Simulator & Dynamic Live Preview (Section 37) ─────────────────
+    let cachedPreviewContacts = [];
+
+    async function loadPreviewContacts() {
+        const select = document.getElementById('preview-contact-select');
+        const badge = document.getElementById('preview-contact-count');
+        if (!select) return;
+
+        const groupIds = getSelectedGroupIds();
+        let url = '/api/contacts/?page_size=250';
+        if (groupIds && groupIds.length > 0) {
+            url += `&groups=${groupIds.join(',')}`;
+        }
+
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            cachedPreviewContacts = data.results || (Array.isArray(data) ? data : []);
+
+            if (badge) {
+                badge.textContent = `${cachedPreviewContacts.length} Contact${cachedPreviewContacts.length === 1 ? '' : 's'}`;
+            }
+
+            if (cachedPreviewContacts.length === 0) {
+                select.innerHTML = '<option value="">No contacts found in selected groups</option>';
+                return;
+            }
+
+            const currentVal = select.value;
+            select.innerHTML = cachedPreviewContacts.map((c, idx) => {
+                const label = `${c.name || 'Unnamed Contact'} (${c.email}${c.phone_number ? ' • ' + c.phone_number : ''}${c.job_id ? ' • ' + c.job_id : ''})`;
+                return `<option value="${c.id}">${escapeHtml(label)}</option>`;
+            }).join('');
+
+            // Restore previously selected or select first
+            if (currentVal && cachedPreviewContacts.some(c => String(c.id) === String(currentVal))) {
+                select.value = currentVal;
+            } else if (cachedPreviewContacts.length > 0) {
+                select.value = cachedPreviewContacts[0].id;
+            }
+        } catch (err) {
+            console.error('Error loading preview contacts:', err);
+            if (badge) badge.textContent = 'Contacts';
+        }
+    }
+
+    function onPreviewContactChange(contactId) {
+        refreshPreview(contactId);
+    }
+
+    async function refreshPreview(contactId = null) {
+        const select = document.getElementById('preview-contact-select');
+        const prevSubject = document.getElementById('prev-subject-text');
+        const prevBody = document.getElementById('prev-body-html');
+        if (!prevSubject || !prevBody) return;
+
+        // If contact dropdown is empty, load contacts first
+        if (!select || select.options.length <= 1) {
+            await loadPreviewContacts();
+        }
+
+        const selectedId = contactId || (select ? select.value : null);
+        const subject = document.getElementById('wz-subject')?.value || '';
+        const html = quill ? quill.root.innerHTML : '';
+        const groupIds = getSelectedGroupIds();
+
+        // Call backend live preview endpoint (uses real decrypted variables and URL)
+        try {
+            const res = await fetch('/api/campaigns/render-preview/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    contact_id: selectedId ? parseInt(selectedId) : null,
+                    group_ids: groupIds,
+                    subject: subject,
+                    html_content: html
+                })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                prevSubject.textContent = data.subject || subject;
+                prevBody.innerHTML = data.html_content || html;
+                return;
+            }
+        } catch (apiErr) {
+            console.warn('Backend render-preview fallback:', apiErr);
+        }
+
+        // Offline / client-side fallback
+        let contact = cachedPreviewContacts.find(c => String(c.id) === String(selectedId)) || cachedPreviewContacts[0];
+        if (!contact) {
+            contact = { name: 'Ali Khan', email: 'ali@example.com', phone_number: '03001234567', job_id: 'JOB-1025', url: 'https://odk.central/survey/xyz' };
+        }
+
+        const replacer = (str) => {
+            return str
+                .replace(/\{\{\s*first_name\s*\}\}/gi, contact.first_name || (contact.name ? contact.name.split(' ')[0] : ''))
+                .replace(/\{\{\s*last_name\s*\}\}/gi, contact.last_name || '')
+                .replace(/\{\{\s*name\s*\}\}/gi, contact.name || '')
+                .replace(/\{\{\s*email\s*\}\}/gi, contact.email || '')
+                .replace(/\{\{\s*phone(?:_number)?\s*\}\}/gi, contact.phone_number || '')
+                .replace(/\{\{\s*(?:url|survey_url)\s*\}\}/gi, contact.url || '')
+                .replace(/\{\{\s*login_password\s*\}\}/gi, 'pass-****')
+                .replace(/\{\{\s*job_id\s*\}\}/gi, contact.job_id || '')
+                .replace(/\{\{\s*status\s*\}\}/gi, contact.status || 'UNUSED')
+                .replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, 'http://localhost:8000/t/unsubscribe/mock-token/');
+        };
+
+        prevSubject.textContent = replacer(subject);
+        prevBody.innerHTML = replacer(html);
+    }
+
+    function prepareReview() {
+        document.getElementById('rev-name').textContent = document.getElementById('wz-name').value;
+        document.getElementById('rev-type').textContent = document.getElementById('wz-type').options[document.getElementById('wz-type').selectedIndex].text;
+        document.getElementById('rev-subject').textContent = document.getElementById('wz-subject').value;
+        document.getElementById('rev-sender').textContent = document.getElementById('wz-sender').options[document.getElementById('wz-sender').selectedIndex].text;
+        const odkEl = document.getElementById('wz-odk-dataset');
+        document.getElementById('rev-odk').textContent = odkEl ? odkEl.options[odkEl.selectedIndex].text : 'None';
+        const remOn = document.getElementById('wz-rem-enabled').checked;
+        document.getElementById('rev-reminders').textContent = remOn ? `Every ${document.getElementById('wz-rem-interval-val').value} ${document.getElementById('wz-rem-interval-unit').value} (Max: ${document.getElementById('wz-rem-max').value})` : 'Disabled';
+        document.getElementById('rev-rule').textContent = document.getElementById('wz-init-rule').value;
+    }
+
+    let currentTestMode = 'direct';
+    let cachedTestGroups = [];
+
+    function setTestModalMode(mode) {
+        currentTestMode = mode;
+        const directBtn = document.getElementById('test-tab-direct');
+        const groupBtn = document.getElementById('test-tab-group');
+        const directSec = document.getElementById('test-mode-direct');
+        const groupSec = document.getElementById('test-mode-group');
+
+        if (mode === 'direct') {
+            if (directBtn) directBtn.className = 'flex-1 py-1.5 px-3 rounded-xl font-bold text-xs transition-all bg-white text-indigo-600 shadow-sm';
+            if (groupBtn) groupBtn.className = 'flex-1 py-1.5 px-3 rounded-xl font-bold text-xs transition-all text-slate-600 hover:text-slate-900';
+            if (directSec) directSec.classList.remove('hidden');
+            if (groupSec) groupSec.classList.add('hidden');
+        } else {
+            if (groupBtn) groupBtn.className = 'flex-1 py-1.5 px-3 rounded-xl font-bold text-xs transition-all bg-white text-indigo-600 shadow-sm';
+            if (directBtn) directBtn.className = 'flex-1 py-1.5 px-3 rounded-xl font-bold text-xs transition-all text-slate-600 hover:text-slate-900';
+            if (directSec) directSec.classList.add('hidden');
+            if (groupSec) groupSec.classList.remove('hidden');
+            loadTestingGroups();
+        }
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function updateTestEmailCount() {
+        const val = document.getElementById('test-email-input')?.value || '';
+        const raw = val.split(/[,;\s\n\r\t]+/);
+        const valid = raw.filter(e => e.trim() && e.includes('@'));
+        const badge = document.getElementById('test-email-count-badge');
+        if (badge) {
+            badge.textContent = `${valid.length} recipient${valid.length === 1 ? '' : 's'}`;
+        }
+    }
+
+    function insertQuickTestEmail(email) {
+        const inp = document.getElementById('test-email-input');
+        if (inp) {
+            inp.value = email;
+            updateTestEmailCount();
+        }
+    }
+
+    async function loadTestingGroups() {
+        const select = document.getElementById('test-group-select');
+        if (!select) return;
+        try {
+            const [tgRes, cgRes] = await Promise.all([
+                fetch('/api/test-groups/').then(r => r.ok ? r.json() : []),
+                fetch('/api/groups/').then(r => r.ok ? r.json() : [])
+            ]);
+
+            cachedTestGroups = [];
+            let html = '<option value="">-- Choose a Testing Group --</option>';
+
+            const testGroups = Array.isArray(tgRes) ? tgRes : (tgRes.results || []);
+            if (testGroups.length > 0) {
+                html += '<optgroup label="Dedicated Multi-Email Testing Groups">';
+                testGroups.forEach(g => {
+                    cachedTestGroups.push({ id: g.id, type: 'test_group', name: g.name, emails: g.email_list || [] });
+                    html += `<option value="tg_${g.id}">${escapeHtml(g.name)} (${g.recipient_count || (g.email_list ? g.email_list.length : 0)} emails)</option>`;
+                });
+                html += '</optgroup>';
+            }
+
+            const contactGroups = Array.isArray(cgRes) ? cgRes : (cgRes.results || []);
+            if (contactGroups.length > 0) {
+                html += '<optgroup label="Contact Groups (All Group Contacts)">';
+                contactGroups.forEach(g => {
+                    cachedTestGroups.push({ id: g.id, type: 'contact_group', name: g.name, count: g.contact_count || 0 });
+                    html += `<option value="cg_${g.id}">${escapeHtml(g.name)} (${g.contact_count || 0} contacts)</option>`;
+                });
+                html += '</optgroup>';
+            }
+
+            select.innerHTML = html;
+        } catch (err) {
+            console.error('Error loading test groups:', err);
+        }
+    }
+
+    function onTestGroupChange() {
+        const val = document.getElementById('test-group-select')?.value || '';
+        const prevBox = document.getElementById('test-group-preview');
+        const pillsBox = document.getElementById('test-group-pills');
+        const countLabel = document.getElementById('test-group-member-count');
+        const nameLabel = document.getElementById('test-group-name-label');
+        const deleteBtnTop = document.getElementById('btn-delete-tg-top');
+        const deleteBtn = document.getElementById('btn-delete-tg');
+
+        if (!val) {
+            if (prevBox) prevBox.classList.add('hidden');
+            if (deleteBtnTop) deleteBtnTop.classList.add('hidden');
+            return;
+        }
+
+        const [prefix, idStr] = val.split('_');
+        const found = cachedTestGroups.find(g => String(g.id) === String(idStr) && ((prefix === 'tg' && g.type === 'test_group') || (prefix === 'cg' && g.type === 'contact_group')));
+
+        if (found && prevBox) {
+            prevBox.classList.remove('hidden');
+            if (nameLabel) nameLabel.textContent = `${found.name}:`;
+            if (found.type === 'test_group') {
+                if (deleteBtn) deleteBtn.classList.remove('hidden');
+                if (deleteBtnTop) deleteBtnTop.classList.remove('hidden');
+                if (countLabel) countLabel.textContent = `${found.emails.length} emails`;
+                if (pillsBox) {
+                    pillsBox.innerHTML = found.emails.map(e => `
+                        <span class="px-2 py-0.5 rounded-md bg-indigo-100/70 text-indigo-700 font-semibold text-[10px]">${escapeHtml(e)}</span>
+                    `).join('');
+                }
+            } else {
+                if (deleteBtn) deleteBtn.classList.add('hidden');
+                if (deleteBtnTop) deleteBtnTop.classList.add('hidden');
+                if (countLabel) countLabel.textContent = `${found.count} contacts`;
+                if (pillsBox) pillsBox.innerHTML = `<span class="text-[11px] text-slate-500 italic">Emails will be pulled dynamically from all contacts in this group.</span>`;
+            }
+        }
+        if (window.lucide) lucide.createIcons();
+    }
+
+    async function deleteCurrentTestingGroup(targetId = null) {
+        let tgId = targetId;
+        if (!tgId) {
+            const val = document.getElementById('test-group-select')?.value || '';
+            if (!val || !val.startsWith('tg_')) {
+                alert('Please select a custom testing group to delete.');
+                return;
+            }
+            tgId = val.split('_')[1];
+        }
+
+        const found = cachedTestGroups.find(g => String(g.id) === String(tgId) && g.type === 'test_group');
+        const grpName = found ? found.name : 'this testing group';
+
+        if (!confirm(`Are you sure you want to delete testing group "${grpName}"?`)) {
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/test-groups/${tgId}/`, {
+                method: 'DELETE',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            });
+            if (res.ok || res.status === 204) {
+                showToast(`Testing group "${grpName}" deleted successfully.`, 'info');
+                document.getElementById('test-group-preview')?.classList.add('hidden');
+                document.getElementById('btn-delete-tg-top')?.classList.add('hidden');
+                await loadTestingGroups();
+                const sel = document.getElementById('test-group-select');
+                if (sel) {
+                    sel.value = '';
+                    onTestGroupChange();
+                }
+            } else {
+                alert('Failed to delete testing group.');
+            }
+        } catch (err) {
+            console.error('Delete group error:', err);
+            alert('Error deleting testing group: ' + err.message);
+        }
+    }
+
+    function toggleNewTestingGroupForm(show = null) {
+        const box = document.getElementById('new-test-group-box');
+        if (!box) return;
+        const willShow = show !== null ? show : box.classList.contains('hidden');
+        box.classList.toggle('hidden', !willShow);
+        if (willShow) {
+            document.getElementById('new-tg-name')?.focus();
+        }
+    }
+
+    async function saveNewTestingGroup() {
+        const nameInput = document.getElementById('new-tg-name');
+        const emailsInput = document.getElementById('new-tg-emails');
+        const btn = document.getElementById('btn-save-tg');
+
+        const name = nameInput ? nameInput.value.trim() : '';
+        const emails = emailsInput ? emailsInput.value.trim() : '';
+
+        if (!name) {
+            alert('Please enter a group name.');
+            if (nameInput) nameInput.focus();
+            return;
+        }
+        if (!emails) {
+            alert('Please enter at least one email address.');
+            if (emailsInput) emailsInput.focus();
+            return;
+        }
+
+        if (btn) btn.disabled = true;
+        try {
+            const res = await fetch('/api/test-groups/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ name: name, emails: emails })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(`Testing Group '${name}' created!`, 'success');
+                toggleNewTestingGroupForm(false);
+                if (nameInput) nameInput.value = '';
+                if (emailsInput) emailsInput.value = '';
+                await loadTestingGroups();
+                const sel = document.getElementById('test-group-select');
+                if (sel) {
+                    sel.value = `tg_${data.id}`;
+                    onTestGroupChange();
+                }
+            } else {
+                alert('Failed to save group: ' + (JSON.stringify(data)));
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Error creating group: ' + err.message);
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    function openTestEmailModal() {
+        const senderSelect = document.getElementById('wz-sender');
+        const senderText = senderSelect && senderSelect.selectedIndex >= 0 ? senderSelect.options[senderSelect.selectedIndex].text : 'Configured Sender';
+        const senderDisplay = document.getElementById('test-sender-display');
+        if (senderDisplay) senderDisplay.textContent = senderText;
+
+        const contactSelect = document.getElementById('preview-contact-select');
+        const contactText = contactSelect && contactSelect.selectedIndex >= 0 ? contactSelect.options[contactSelect.selectedIndex].text : 'Default Sample Contact';
+        const contactDisplay = document.getElementById('test-contact-display');
+        if (contactDisplay) contactDisplay.textContent = contactText;
+
+        const statusBox = document.getElementById('test-modal-status-box');
+        if (statusBox) {
+            statusBox.className = 'hidden p-3.5 rounded-2xl text-xs space-y-2';
+            statusBox.innerHTML = '';
+        }
+
+        const btn = document.getElementById('btn-test-send');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5"></i> <span>Send Test</span>`;
+        }
+
+        updateTestEmailCount();
+        document.getElementById('test-modal').classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function closeTestModal() {
+        document.getElementById('test-modal').classList.add('hidden');
+    }
+
+    function getCampaignEditorHtml() {
+        let content = '';
+        if (typeof quill !== 'undefined' && quill && quill.root) {
+            content = quill.root.innerHTML;
+        } else if (window.quill && window.quill.root) {
+            content = window.quill.root.innerHTML;
+        }
+        if (!content || content.trim() === '<p><br></p>' || content.trim() === '') {
+            const editorEl = document.querySelector('#quill-editor .ql-editor');
+            if (editorEl && editorEl.innerHTML && editorEl.innerHTML.trim() !== '<p><br></p>') {
+                content = editorEl.innerHTML;
+            }
+        }
+        if (!content || content.trim() === '<p><br></p>' || content.trim() === '') {
+            const hiddenInput = document.getElementById('wz-html-content');
+            if (hiddenInput && hiddenInput.value && hiddenInput.value.trim() !== '<p><br></p>') {
+                content = hiddenInput.value;
+            }
+        }
+        return (content && content.trim() !== '<p><br></p>') ? content : '';
+    }
+
+    async function executeSendTest() {
+        const btn = document.getElementById('btn-test-send');
+        const statusBox = document.getElementById('test-modal-status-box');
+
+        let testPayload = {};
+
+        if (currentTestMode === 'direct') {
+            const emailInput = document.getElementById('test-email-input');
+            const testEmail = emailInput ? emailInput.value.trim() : '';
+            if (!testEmail) {
+                alert('Please enter at least one recipient email address.');
+                if (emailInput) emailInput.focus();
+                return;
+            }
+            testPayload.email = testEmail;
+        } else {
+            const groupSelect = document.getElementById('test-group-select');
+            const selVal = groupSelect ? groupSelect.value : '';
+            if (!selVal) {
+                alert('Please select a testing group.');
+                if (groupSelect) groupSelect.focus();
+                return;
+            }
+            const [prefix, idStr] = selVal.split('_');
+            testPayload.test_group_id = parseInt(idStr);
+        }
+
+        // Live overrides directly from the active wizard form
+        const subject = document.getElementById('wz-subject')?.value?.trim();
+        const html = getCampaignEditorHtml();
+        const senderSelect = document.getElementById('wz-sender');
+        const senderId = senderSelect && senderSelect.value ? parseInt(senderSelect.value) : null;
+        const contactSelect = document.getElementById('preview-contact-select');
+        const contactId = contactSelect && contactSelect.value ? parseInt(contactSelect.value) : null;
+
+        if (subject) testPayload.subject = subject;
+        if (html) testPayload.html_content = html;
+        if (senderId) testPayload.sender_id = senderId;
+        if (contactId) testPayload.contact_id = contactId;
+        if (campaignId) testPayload.campaign_id = campaignId;
+        if (typeof getSelectedGroupIds === 'function') {
+            testPayload.group_ids = getSelectedGroupIds();
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> <span>Dispatching...</span>`;
+
+        if (statusBox) {
+            statusBox.className = 'p-3.5 rounded-2xl text-xs bg-slate-100 text-slate-700 block space-y-1';
+            statusBox.innerHTML = `<strong>Transmitting:</strong> Connecting to mail provider and dispatching test emails...`;
+        }
+
+        try {
+            // Optional: try background save of draft if valid, but do NOT block test send if validation fails
+            if (typeof saveCampaignData === 'function') {
+                saveCampaignData(false).catch(err => console.log('Background draft save notice:', err));
+            }
+
+            const endpoint = campaignId ? `/api/campaigns/${campaignId}/test_email/` : '/api/campaigns/test_email/';
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify(testPayload)
+            });
+            const data = await res.json();
+
+            if (res.ok) {
+                showToast(data.message || 'Test emails successfully dispatched!', 'success');
+                if (statusBox) {
+                    statusBox.className = 'p-4 rounded-2xl text-xs bg-emerald-50 text-emerald-900 border border-emerald-200 block space-y-2';
+
+                    let recipientsListHtml = '';
+                    if (data.recipients && data.recipients.length > 0) {
+                        recipientsListHtml = `
+                            <div class="mt-2 space-y-1 max-h-32 overflow-y-auto p-2 bg-white/90 rounded-xl border border-emerald-200/80">
+                                ${data.recipients.map(r => `
+                                    <div class="flex items-center justify-between text-[11px]">
+                                        <span class="font-medium text-slate-800">${escapeHtml(r.email)}</span>
+                                        <span class="font-bold ${r.status === 'sent' ? 'text-emerald-600' : 'text-rose-600'}">
+                                            ${r.status === 'sent' ? '✓ Accepted' : '✕ ' + escapeHtml(r.error || 'Failed')}
+                                        </span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `;
+                    }
+
+                    statusBox.innerHTML = `
+                        <div class="font-bold text-emerald-800 flex items-center justify-between text-sm">
+                            <span class="flex items-center gap-1.5"><span>✓</span> ${escapeHtml(data.message)}</span>
+                            <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-200/70 text-emerald-900">${data.sent_count}/${data.total} sent</span>
+                        </div>
+                        <p class="text-emerald-700 leading-relaxed">
+                            Dispatched via <strong>${escapeHtml(data.provider || 'Mail Provider')}</strong> (From: <code>${escapeHtml(data.sender || '')}</code>).
+                        </p>
+                        ${recipientsListHtml}
+                        <div class="p-2.5 bg-white/80 rounded-xl border border-emerald-200/80 text-[11px] text-slate-700 space-y-1">
+                            <div><strong>• Local Inspection:</strong> A copy has been captured in <a href="/sandbox/webmail/" target="_blank" class="text-indigo-600 font-bold underline">Sandbox Webmail ↗</a>.</div>
+                            <div><strong>• Inbox Delivery Notice:</strong> If not visible in your inbox within 1-2 minutes, check your <strong>Spam / Junk</strong> folder (domain SPF verification recommended for ${escapeHtml(data.sender || 'sender')}).</div>
+                        </div>
+                    `;
+                }
+            } else {
+                if (statusBox) {
+                    statusBox.className = 'p-4 rounded-2xl text-xs bg-rose-50 text-rose-900 border border-rose-200 block space-y-1.5';
+                    statusBox.innerHTML = `
+                        <div class="font-bold text-rose-800 text-sm">✕ Test Send Failed</div>
+                        <p class="text-rose-700">${escapeHtml(data.error || data.message || 'Unknown provider error occurred.')}</p>
+                    `;
+                }
+            }
+        } catch (err) {
+            console.error('Test send error:', err);
+            if (statusBox) {
+                statusBox.className = 'p-4 rounded-2xl text-xs bg-rose-50 text-rose-900 border border-rose-200 block space-y-1.5';
+                statusBox.innerHTML = `
+                    <div class="font-bold text-rose-800 text-sm">✕ Request Error</div>
+                    <p class="text-rose-700">${escapeHtml(err.message || 'Error executing test send.')}</p>
+                `;
+            }
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5"></i> <span>Send Test Again</span>`;
+            if (window.lucide) lucide.createIcons();
+        }
+    }
+
+    function getSelectedGroupIds() {
+        const checked = document.querySelectorAll('input[name="wz_groups"]:checked');
+        return Array.from(checked).map(cb => parseInt(cb.value));
+    }
+
+    async function saveCampaignData(launch = false) {
+        const payload = {
+            name: document.getElementById('wz-name').value,
+            campaign_type: document.getElementById('wz-type').value,
+            description: document.getElementById('wz-desc').value,
+            sender: parseInt(document.getElementById('wz-sender').value),
+            odk_dataset: (document.getElementById('wz-odk-dataset') && document.getElementById('wz-odk-dataset').value) ? parseInt(document.getElementById('wz-odk-dataset').value) : null,
+            odk_form: null,
+            groups: getSelectedGroupIds(),
+            initial_recipient_rule: document.getElementById('wz-init-rule').value,
+            subject: document.getElementById('wz-subject').value,
+            preview_text: document.getElementById('wz-preview-text').value,
+            html_content: quill.root.innerHTML,
+            reminder_config: {
+                enabled: document.getElementById('wz-rem-enabled').checked,
+                interval_value: parseInt(document.getElementById('wz-rem-interval-val').value),
+                interval_unit: document.getElementById('wz-rem-interval-unit').value,
+                max_reminders: parseInt(document.getElementById('wz-rem-max').value),
+                sync_odk_before_send: true,
+                stop_when_used: true
+            }
+        };
+
+        const method = campaignId ? 'PUT' : 'POST';
+        const url = campaignId ? `/api/campaigns/${campaignId}/` : '/api/campaigns/';
+
+        const res = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok) {
+            campaignId = data.id;
+
+            // Auto-save as reusable template if enabled
+            const saveTmplCb = document.getElementById('wz-save-as-template');
+            if (saveTmplCb && saveTmplCb.checked) {
+                const tmplNameInput = document.getElementById('wz-template-name');
+                const tmplName = (tmplNameInput && tmplNameInput.value.trim()) || payload.name || 'Saved Survey Template';
+                try {
+                    await fetch('/api/templates/', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                        body: JSON.stringify({
+                            name: tmplName,
+                            subject: payload.subject,
+                            preview_text: payload.preview_text,
+                            html_content: payload.html_content,
+                            category: 'Survey Invitation'
+                        })
+                    });
+                } catch (tmplErr) {
+                    console.warn('Template auto-save notice:', tmplErr);
+                }
+            }
+
+            return data;
+        } else {
+            throw new Error(JSON.stringify(data));
+        }
+    }
+
+    // --- Schedule Modal & Mode Controllers ---
+    function openScheduleModal() {
+        const modal = document.getElementById('schedule-modal');
+        if (!modal) return;
+        modal.classList.remove('hidden');
+
+        // Default datetime input to now + 2 hours if empty
+        const dtInput = document.getElementById('schedule-datetime-input');
+        if (dtInput && !dtInput.value) {
+            const inTwoHours = new Date(Date.now() + 2 * 60 * 60 * 1000);
+            inTwoHours.setMinutes(inTwoHours.getMinutes() - inTwoHours.getTimezoneOffset());
+            dtInput.value = inTwoHours.toISOString().slice(0, 16);
+        }
+
+        onScheduleModeChange();
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function closeScheduleModal() {
+        const modal = document.getElementById('schedule-modal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    function onScheduleModeChange() {
+        const selected = document.querySelector('input[name="wz_send_mode"]:checked')?.value || 'now';
+        const dtContainer = document.getElementById('schedule-datetime-container');
+        const batchesContainer = document.getElementById('batches-config-container');
+        const btnText = document.getElementById('schedule-confirm-text');
+        const btnIcon = document.getElementById('schedule-confirm-icon');
+
+        if (dtContainer) {
+            dtContainer.classList.toggle('hidden', selected !== 'schedule');
+        }
+        if (batchesContainer) {
+            batchesContainer.classList.toggle('hidden', selected !== 'batches');
+        }
+
+        if (btnText) {
+            if (selected === 'now') {
+                btnText.textContent = 'Send Campaign Now';
+                if (btnIcon) btnIcon.setAttribute('data-lucide', 'send');
+            } else if (selected === 'schedule') {
+                btnText.textContent = 'Schedule Campaign';
+                if (btnIcon) btnIcon.setAttribute('data-lucide', 'calendar');
+            } else if (selected === 'best_time') {
+                btnText.textContent = 'Schedule at Best Time';
+                if (btnIcon) btnIcon.setAttribute('data-lucide', 'sparkles');
+            } else if (selected === 'batches') {
+                btnText.textContent = 'Launch in Batches';
+                if (btnIcon) btnIcon.setAttribute('data-lucide', 'layers');
+            } else if (selected === 'draft') {
+                btnText.textContent = 'Save as Draft';
+                if (btnIcon) btnIcon.setAttribute('data-lucide', 'file-text');
+            }
+        }
+        if (window.lucide) lucide.createIcons();
+    }
+
+    async function saveCampaignAsDraft() {
+        const topDraftBtn = document.getElementById('top-btn-save-draft');
+        const step8DraftBtn = document.getElementById('btn-step8-draft');
+        [topDraftBtn, step8DraftBtn].forEach(b => {
+            if (b) { b.disabled = true; b.innerHTML = '<span class="animate-spin inline-block mr-1">⌛</span> Saving...'; }
+        });
+
+        try {
+            await saveCampaignData(false);
+            showToast('Campaign successfully saved as Draft!', 'success');
+            setTimeout(() => {
+                window.location.href = '/campaigns/';
+            }, 1000);
+        } catch (err) {
+            console.error(err);
+            showToast('Failed to save draft: ' + err.message, 'error');
+        } finally {
+            [topDraftBtn, step8DraftBtn].forEach(b => {
+                if (b) { b.disabled = false; b.innerHTML = '<i data-lucide="file-text" class="w-3.5 h-3.5"></i> Save as Draft'; }
+            });
+            if (window.lucide) lucide.createIcons();
+        }
+    }
+
+    async function executeScheduleSubmission() {
+        const selectedMode = document.querySelector('input[name="wz_send_mode"]:checked')?.value || 'now';
+        const confirmBtn = document.getElementById('btn-confirm-schedule');
+        const originalText = confirmBtn ? confirmBtn.innerHTML : '';
+
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+            confirmBtn.innerHTML = '<span class="animate-spin inline-block mr-2">⌛</span> Processing...';
+        }
+
+        try {
+            // First ensure campaign base settings are saved
+            await saveCampaignData(false);
+
+            if (selectedMode === 'draft') {
+                closeScheduleModal();
+                showToast('Campaign saved as Draft.', 'success');
+                setTimeout(() => {
+                    window.location.href = '/campaigns/';
+                }, 1000);
+                return;
+            }
+
+            // Payload for sending / scheduling
+            const sendPayload = {
+                send_mode: selectedMode === 'best_time' ? 'schedule' : selectedMode
+            };
+
+            if (selectedMode === 'schedule') {
+                const dtVal = document.getElementById('schedule-datetime-input')?.value;
+                if (!dtVal) {
+                    throw new Error('Please select a date and time for scheduled send.');
+                }
+                sendPayload.scheduled_at = new Date(dtVal).toISOString();
+            } else if (selectedMode === 'best_time') {
+                // Optimal time: +4 hours
+                const bestTime = new Date(Date.now() + 4 * 60 * 60 * 1000);
+                sendPayload.scheduled_at = bestTime.toISOString();
+            } else if (selectedMode === 'batches') {
+                sendPayload.batch_size = parseInt(document.getElementById('batch-size-input')?.value || 50);
+                sendPayload.batch_interval_minutes = parseInt(document.getElementById('batch-interval-input')?.value || 30);
+            }
+
+            const res = await fetch(`/api/campaigns/${campaignId}/send/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify(sendPayload)
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                throw new Error(data.error || data.message || 'Failed to dispatch campaign');
+            }
+
+            closeScheduleModal();
+            showToast(data.message || 'Campaign processed successfully!', 'success');
+            setTimeout(() => {
+                window.location.href = `/campaigns/${campaignId}/report/`;
+            }, 1200);
+
+        } catch (err) {
+            console.error('Schedule submission error:', err);
+            alert('Could not complete request: ' + err.message);
+        } finally {
+            if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = originalText;
+                if (window.lucide) lucide.createIcons();
+            }
+        }
+    }
+
+    async function saveAndLaunchCampaign() {
+        openScheduleModal();
+    }
+
+    // Initialize toggle states and query parameter routing on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        const remToggle = document.getElementById('wz-rem-enabled');
+        if (remToggle) {
+            toggleReminderFields(remToggle.checked);
+        }
+        {% if selected_template %}
+        applySavedTemplate({{ selected_template.id }});
+        {% endif %}
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetStep = urlParams.get('step');
+        const targetMode = urlParams.get('mode');
+
+        if (targetStep) {
+            const stepNum = parseInt(targetStep);
+            if (!isNaN(stepNum) && stepNum >= 1 && stepNum <= 8) {
+                setWizardStep(stepNum);
+            }
+        }
+
+        if (targetMode === 'send') {
+            setWizardStep(8);
+            setTimeout(() => {
+                openScheduleModal();
+            }, 300);
+        } else if (targetMode === 'draft') {
+            showToast('Editing campaign in Draft mode.', 'info');
+        }
+    });
+</script>
+{% endblock %}

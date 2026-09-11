@@ -1,0 +1,260 @@
+<!-- Tracked URL Shortener Modal (Requirement 1) -->
+<div id="tracked-url-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <!-- Modal Header -->
+        <div class="bg-gradient-to-r from-blue-600 to-indigo-700 px-6 py-4.5 text-white flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+                <div class="p-2 bg-white/15 rounded-xl backdrop-blur-xs">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="text-base font-extrabold leading-tight">Insert Tracked Branded URL</h3>
+                    <p class="text-xs text-blue-100 font-medium">Recipient-level tracked short URL (ODK & Web links)</p>
+                </div>
+            </div>
+            <button type="button" onclick="closeTrackedUrlModal()" class="text-white/80 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+
+        <div class="p-6 space-y-4 text-xs">
+            <!-- Original Destination URL -->
+            <div>
+                <label class="block font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Original Destination URL <span class="text-rose-500">*</span>
+                </label>
+                <div class="relative">
+                    <input type="text" id="tu-original-url" oninput="onTrackedUrlInputChange()" placeholder="https://www.odk.iriscommunications.cloud/project/12/forms/registration" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="flex items-center justify-between text-[11px] text-slate-500 mt-1">
+                    <span>Must start with http://, https://, or use &#123;&#123;url&#125;&#125;</span>
+                    <button type="button" onclick="insertPlaceholderIntoUrl('{{url}}')" class="text-blue-600 hover:text-blue-800 font-bold underline">+ Use &#123;&#123;url&#125;&#125;</button>
+                </div>
+            </div>
+
+            <!-- Link Display Text -->
+            <div>
+                <label class="block font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Link Display Text <span class="text-rose-500">*</span>
+                </label>
+                <input type="text" id="tu-display-text" oninput="onTrackedUrlInputChange()" placeholder="Click Here to Start Survey" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-semibold text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+
+            <!-- Optional Link Name / Label -->
+            <div>
+                <label class="block font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Link Label / Report Name <span class="text-slate-400 font-normal lowercase">(optional)</span>
+                </label>
+                <input type="text" id="tu-link-name" placeholder="e.g. ODK Survey Link" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <p class="text-[11px] text-slate-400 mt-1">Identifies this link in campaign reports and click analytics.</p>
+            </div>
+
+            <!-- Toggles: Enable Tracking & Open in New Tab -->
+            <div class="grid grid-cols-2 gap-3 pt-1">
+                <div class="p-3 bg-slate-50 border border-slate-200/90 rounded-xl space-y-1.5">
+                    <label class="font-bold text-slate-800 flex items-center justify-between cursor-pointer">
+                        <span>Enable Tracking</span>
+                        <input type="checkbox" id="tu-enable-tracking" checked onchange="onTrackedUrlInputChange()" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500">
+                    </label>
+                    <p class="text-[10px] text-slate-500">Generates recipient-specific unique token</p>
+                </div>
+
+                <div class="p-3 bg-slate-50 border border-slate-200/90 rounded-xl space-y-1.5">
+                    <label class="font-bold text-slate-800 flex items-center justify-between cursor-pointer">
+                        <span>Open in New Tab</span>
+                        <input type="checkbox" id="tu-open-new-tab" checked class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500">
+                    </label>
+                    <p class="text-[10px] text-slate-500">Opens link with target="_blank"</p>
+                </div>
+            </div>
+
+            <!-- Short URL Preview Box (Requirement 1) -->
+            <div class="p-3.5 bg-gradient-to-r from-slate-50 to-blue-50/40 border border-blue-200/80 rounded-2xl space-y-2">
+                <div class="flex items-center justify-between text-[11px]">
+                    <span class="font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                        Short URL Preview:
+                    </span>
+                    <span class="px-2 py-0.5 bg-blue-100 text-blue-800 font-bold rounded-md text-[10px]" id="tu-preview-badge">Branded Domain</span>
+                </div>
+                <div class="p-2.5 bg-white border border-slate-200 rounded-xl font-mono text-xs text-blue-600 font-bold break-all shadow-2xs" id="tu-preview-box">
+                    https://marketing.iriscommunications.cloud/{unique_link}
+                </div>
+                <p class="text-[10px] text-slate-500 leading-normal" id="tu-preview-note">
+                    * The actual recipient-specific URL (e.g. <code>https://marketing.iriscommunications.cloud/A7K29X</code>) will be generated automatically for every individual contact when the campaign is dispatched.
+                </p>
+            </div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+            <button type="button" onclick="closeTrackedUrlModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-white text-xs transition-colors">
+                Cancel
+            </button>
+            <button type="button" onclick="confirmInsertTrackedUrl()" id="btn-confirm-insert-tu" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold rounded-xl shadow-md shadow-blue-600/20 text-xs flex items-center gap-2 transition-all">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                <span>Insert Tracked Link</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let activeTrackedUrlContext = 'wizard';
+    let savedQuillSelection = null;
+
+    function openTrackedUrlModal(context = 'wizard') {
+        activeTrackedUrlContext = context;
+        const modal = document.getElementById('tracked-url-modal');
+        if (!modal) return;
+
+        const activeEditor = (context === 'wizard' ? window.quill : window.quillModal);
+        if (activeEditor) {
+            savedQuillSelection = activeEditor.getSelection();
+            if (savedQuillSelection && savedQuillSelection.length > 0) {
+                const selectedText = activeEditor.getText(savedQuillSelection.index, savedQuillSelection.length);
+                if (selectedText && selectedText.trim()) {
+                    const dispInput = document.getElementById('tu-display-text');
+                    if (dispInput) dispInput.value = selectedText.trim();
+                }
+            }
+        }
+
+        modal.classList.remove('hidden');
+        onTrackedUrlInputChange();
+        setTimeout(() => {
+            const origInput = document.getElementById('tu-original-url');
+            if (origInput) origInput.focus();
+        }, 100);
+    }
+
+    function closeTrackedUrlModal() {
+        const modal = document.getElementById('tracked-url-modal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    function insertPlaceholderIntoUrl(val) {
+        const input = document.getElementById('tu-original-url');
+        if (input) {
+            input.value = val;
+            onTrackedUrlInputChange();
+            input.focus();
+        }
+    }
+
+    function onTrackedUrlInputChange() {
+        const origInput = document.getElementById('tu-original-url');
+        const enableTrack = document.getElementById('tu-enable-tracking');
+        const previewBox = document.getElementById('tu-preview-box');
+        const previewBadge = document.getElementById('tu-preview-badge');
+        const previewNote = document.getElementById('tu-preview-note');
+
+        if (!previewBox) return;
+
+        const isTracking = enableTrack ? enableTrack.checked : true;
+        const origVal = (origInput ? origInput.value.trim() : '');
+
+        if (!isTracking) {
+            previewBox.textContent = origVal || 'https://example.com/direct-link';
+            previewBox.className = 'p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-700 font-bold break-all shadow-2xs';
+            if (previewBadge) {
+                previewBadge.textContent = 'Direct Link';
+                previewBadge.className = 'px-2 py-0.5 bg-slate-100 text-slate-700 font-bold rounded-md text-[10px]';
+            }
+            if (previewNote) {
+                previewNote.textContent = '* Tracking is disabled. Recipients will be sent directly to this URL without click tracking.';
+            }
+        } else {
+            previewBox.textContent = 'https://marketing.iriscommunications.cloud/{unique_link}';
+            previewBox.className = 'p-2.5 bg-white border border-blue-200 rounded-xl font-mono text-xs text-blue-600 font-bold break-all shadow-2xs';
+            if (previewBadge) {
+                previewBadge.textContent = 'Branded Domain';
+                previewBadge.className = 'px-2 py-0.5 bg-blue-100 text-blue-800 font-bold rounded-md text-[10px]';
+            }
+            if (previewNote) {
+                previewNote.innerHTML = '* The actual recipient-specific URL (e.g. <code>https://marketing.iriscommunications.cloud/A7K29X</code>) will be generated automatically for every individual contact when the campaign is dispatched.';
+            }
+        }
+    }
+
+    function confirmInsertTrackedUrl() {
+        const origInput = document.getElementById('tu-original-url');
+        const dispInput = document.getElementById('tu-display-text');
+        const nameInput = document.getElementById('tu-link-name');
+        const trackInput = document.getElementById('tu-enable-tracking');
+        const tabInput = document.getElementById('tu-open-new-tab');
+
+        const originalUrl = origInput ? origInput.value.trim() : '';
+        let displayText = dispInput ? dispInput.value.trim() : '';
+        const linkName = nameInput ? nameInput.value.trim() : '';
+        const enableTracking = trackInput ? trackInput.checked : true;
+        const openInNewTab = tabInput ? tabInput.checked : true;
+
+        if (!originalUrl) {
+            alert('Please enter the Original Destination URL.');
+            if (origInput) origInput.focus();
+            return;
+        }
+
+        // Validate protocol or variable
+        const isVar = originalUrl.startsWith('{{') && originalUrl.endsWith('}}');
+        if (!isVar && !originalUrl.startsWith('http://') && !originalUrl.startsWith('https://')) {
+            alert('URL must start with http:// or https:// (or use {{url}}).');
+            if (origInput) origInput.focus();
+            return;
+        }
+
+        if (!displayText) {
+            displayText = linkName || originalUrl;
+        }
+
+        const activeEditor = (activeTrackedUrlContext === 'wizard' ? window.quill : window.quillModal);
+        if (!activeEditor) {
+            console.error('No active Quill editor found');
+            closeTrackedUrlModal();
+            return;
+        }
+
+        // Escape HTML utility
+        const esc = (str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+        let linkHtml = '';
+        if (enableTracking) {
+            const targetAttr = openInNewTab ? 'target="_blank" rel="noopener noreferrer"' : '';
+            linkHtml = `<a href="https://marketing.iriscommunications.cloud/{unique_link}" data-original-url="${esc(originalUrl)}" data-link-name="${esc(linkName || displayText)}" data-track="true" ${targetAttr}>${esc(displayText)}</a>`;
+        } else {
+            const targetAttr = openInNewTab ? 'target="_blank" rel="noopener noreferrer"' : '';
+            linkHtml = `<a href="${esc(originalUrl)}" data-track="false" ${targetAttr}>${esc(displayText)}</a>`;
+        }
+
+        // Insert into Quill
+        let index = 0;
+        let length = 0;
+        if (savedQuillSelection) {
+            index = savedQuillSelection.index;
+            length = savedQuillSelection.length;
+        } else {
+            const sel = activeEditor.getSelection();
+            if (sel) {
+                index = sel.index;
+                length = sel.length;
+            } else {
+                index = activeEditor.getLength() - 1;
+            }
+        }
+
+        if (length > 0) {
+            activeEditor.deleteText(index, length);
+        }
+
+        activeEditor.clipboard.dangerouslyPasteHTML(index, linkHtml);
+        activeEditor.setSelection(index + displayText.length + 1, 0);
+
+        closeTrackedUrlModal();
+        if (typeof showToast === 'function') {
+            showToast('Tracked URL inserted into email', 'success');
+        }
+    }
+</script>

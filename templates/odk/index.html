@@ -1,0 +1,1126 @@
+{% extends "base.html" %}
+
+{% block page_title %}ODK Central Connections & Forms{% endblock %}
+
+{% block header_actions %}
+<button onclick="openAddConnectionModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-xl shadow-md shadow-blue-500/20 flex items-center gap-2 transition-all">
+    <i data-lucide="plus" class="w-4 h-4"></i>
+    Add Connection
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <!-- Active Connections -->
+    <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="text-base font-bold text-slate-900">ODK Central Servers (Section 15)</h2>
+                <p class="text-xs text-slate-500 mt-0.5">Connect to production ODK Central servers or use the local Mock Sandbox.</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="connections-grid">
+            <!-- Populated via JS -->
+        </div>
+    </div>
+
+    <!-- Forms & Field Mapping & Sync Now (Section 16, 17, 22) -->
+    <div class="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+                <h2 class="text-base font-bold text-slate-900">Configured Forms & Sync Status</h2>
+                <p class="text-xs text-slate-500 mt-0.5">Forms synchronizing respondent submissions into USED status.</p>
+            </div>
+            <a href="/odk/unmatched/" class="text-xs font-semibold text-amber-600 hover:text-amber-700 flex items-center gap-1.5">
+                <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                View Unmatched Submissions
+            </a>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        <th class="py-3.5 px-6">Form Name</th>
+                        <th class="py-3.5 px-6">XML Form ID</th>
+                        <th class="py-3.5 px-6">Field Mapping</th>
+                        <th class="py-3.5 px-6 text-center">Submissions Synced</th>
+                        <th class="py-3.5 px-6">Last Sync</th>
+                        <th class="py-3.5 px-6 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="forms-tbody" class="divide-y divide-slate-100">
+                    <tr><td colspan="6" class="py-8 text-center text-slate-400">Loading forms...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <!-- Pagination Container -->
+        <div id="forms-pagination-container"></div>
+    </div>
+
+    <!-- ODK Entity Lists / Datasets Section -->
+    <div class="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+                <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <i data-lucide="layers" class="w-4 h-4 text-blue-600"></i>
+                    ODK Entity Lists (Datasets)
+                </h2>
+                <p class="text-xs text-slate-500 mt-0.5">Entity lists discovered across your ODK Central projects. View entities, sync updates, and import respondents into Contact groups.</p>
+            </div>
+            <button onclick="loadDatasets(1)" class="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                Refresh Lists
+            </button>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        <th class="py-3.5 px-6">Entity List (Dataset)</th>
+                        <th class="py-3.5 px-6">Project & Connection</th>
+                        <th class="py-3.5 px-6">Description</th>
+                        <th class="py-3.5 px-6 text-center">Entities Count</th>
+                        <th class="py-3.5 px-6 text-center">Status</th>
+                        <th class="py-3.5 px-6">Last Synced</th>
+                        <th class="py-3.5 px-6 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="datasets-tbody" class="divide-y divide-slate-100">
+                    <tr><td colspan="7" class="py-8 text-center text-slate-400">Loading entity lists...</td></tr>
+                </tbody>
+
+            </table>
+        </div>
+        <!-- Datasets Pagination Container -->
+        <div id="datasets-pagination-container"></div>
+    </div>
+</div>
+
+<!-- Add Connection Modal -->
+<div id="conn-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+            <h3 class="text-base font-bold text-slate-900">Add ODK Central Connection</h3>
+            <button onclick="closeAddConnectionModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <form onsubmit="submitAddConnection(event)" class="space-y-4 pt-4 text-sm">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Connection Name *</label>
+                <input type="text" id="conn-name" required placeholder="e.g. IRIS ODK Central" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">ODK Central Base URL *</label>
+                <input type="url" id="conn-url" required placeholder="https://odk.yourdomain.com" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">User Email / Service Account</label>
+                <input type="text" id="conn-user" placeholder="user@domain.com" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Password or API Token</label>
+                <input type="password" id="conn-token" placeholder="Stored encrypted at rest" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <label class="flex items-center gap-2 p-3 bg-amber-50 rounded-xl border border-amber-200 cursor-pointer">
+                <input type="checkbox" id="conn-is-sandbox" class="rounded text-amber-600">
+                <span class="text-xs font-bold text-amber-900">Use Internal Mock Sandbox (No external server required)</span>
+            </label>
+            <div class="pt-4 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onclick="closeAddConnectionModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50">Cancel</button>
+                <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md">Save Connection</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Entities View Modal -->
+<div id="entities-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-5xl w-full p-6 shadow-2xl border border-slate-100 flex flex-col max-h-[90vh]">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100 flex-shrink-0">
+            <div>
+                <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <i data-lucide="layers" class="w-5 h-5 text-blue-600"></i>
+                    <span id="entities-modal-title">Entity List</span>
+                </h3>
+                <p class="text-xs text-slate-500 mt-0.5" id="entities-modal-subtitle">Viewing entities from ODK Central</p>
+            </div>
+            <button onclick="closeEntitiesModal()" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="py-3 flex items-center justify-between gap-3 border-b border-slate-100 flex-shrink-0 flex-wrap">
+            <div class="flex items-center gap-2">
+                <span class="px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700" id="entities-modal-count">0 Entities</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="btn-sync-entities-modal" onclick="syncActiveDataset()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors">
+                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                    Sync From ODK
+                </button>
+                <button id="btn-import-entities-modal" onclick="openImportModalFromView()" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm transition-colors">
+                    <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+                    Import as Contacts
+                </button>
+            </div>
+        </div>
+
+        <div class="overflow-y-auto flex-1 my-2">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 font-bold text-slate-500 uppercase">
+                        <th class="py-2.5 px-4">Entity Label / Name</th>
+                        <th class="py-2.5 px-4">UUID</th>
+                        <th class="py-2.5 px-4 text-center">Status</th>
+                        <th class="py-2.5 px-4">Properties (Email / Phone / Job ID)</th>
+                        <th class="py-2.5 px-4 text-center">Version</th>
+                        <th class="py-2.5 px-4">Created</th>
+                    </tr>
+                </thead>
+                <tbody id="entities-tbody" class="divide-y divide-slate-100">
+                    <tr><td colspan="6" class="py-8 text-center text-slate-400">Loading entities...</td></tr>
+                </tbody>
+
+            </table>
+        </div>
+
+        <div id="modal-entities-pagination-container" class="flex-shrink-0 border-t border-slate-100 pt-2"></div>
+    </div>
+</div>
+
+<!-- Import to Contacts Modal with Manual Field Mapping -->
+<div id="import-entities-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-100 flex flex-col max-h-[92vh]">
+        <!-- Header -->
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100 flex-shrink-0">
+            <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                <i data-lucide="user-plus" class="w-5 h-5 text-blue-600"></i>
+                Import Entities to Contacts
+            </h3>
+            <button onclick="closeImportEntitiesModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+
+        <!-- Body (Scrollable) -->
+        <div class="overflow-y-auto space-y-4 py-3 pr-1 text-xs">
+            <p class="text-slate-600 leading-relaxed">
+                Entities in <strong id="import-dataset-name" class="text-slate-900 font-semibold"></strong> will be imported into Contacts. You can configure manual field mappings or use auto-detected mappings.
+            </p>
+
+            <!-- Group Selection -->
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Target Contact Group</label>
+                    <select id="import-group-select" onchange="onImportGroupSelectChange()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-semibold">
+                        <option value="">-- Do not add to a group --</option>
+                        <option value="__new__">+ Create New Group...</option>
+                    </select>
+                </div>
+                <div id="group-mapping-notice" class="hidden p-2.5 bg-emerald-50 border border-emerald-200/80 rounded-xl text-[11px] text-emerald-800 flex items-center gap-1.5 font-medium"></div>
+                <div id="import-new-group-box" class="hidden">
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">New Group Name</label>
+                    <input type="text" id="import-new-group-name" placeholder="e.g. ODK Cohort 2026" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs">
+                </div>
+            </div>
+
+            <!-- Field Mapping Box -->
+            <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                        <i data-lucide="git-merge" class="w-4 h-4 text-blue-600"></i>
+                        Field Mapping (Map Entity Attributes &rarr; Contact Fields)
+                    </div>
+                    <button type="button" onclick="autoDetectMapping()" class="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 hover:underline">
+                        <i data-lucide="sparkles" class="w-3 h-3"></i> Reset to Auto-Detect
+                    </button>
+                </div>
+
+                <div id="mapping-loading-indicator" class="text-xs text-slate-500 py-3 flex items-center gap-2">
+                    <i data-lucide="loader-2" class="w-4 h-4 animate-spin text-blue-600"></i>
+                    Detecting dataset entity attributes...
+                </div>
+
+                <div id="mapping-fields-container" class="hidden space-y-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <!-- Email Address -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                                <span>Email Address <span class="text-rose-500">*</span></span>
+                            </label>
+                            <select id="map-email" class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                <option value="">-- Auto Detect (email, respondent_email) --</option>
+                            </select>
+                        </div>
+
+                        <!-- Full Name -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Full Name</label>
+                            <select id="map-name" class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                <option value="">-- Auto Detect (p_name, name, respondent_name) --</option>
+                            </select>
+                        </div>
+
+                        <!-- First Name -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">First Name</label>
+                            <select id="map-first-name" class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                <option value="">-- Optional / Split from Full Name --</option>
+                            </select>
+                        </div>
+
+                        <!-- Last Name -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Last Name</label>
+                            <select id="map-last-name" class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                <option value="">-- Optional / Split from Full Name --</option>
+                            </select>
+                        </div>
+
+                        <!-- Job ID / Token -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Job ID / Token</label>
+                            <select id="map-job-id" class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                <option value="">-- Auto Detect (job_id, token, label, uuid) --</option>
+                            </select>
+                        </div>
+
+                        <!-- Survey Status (Auto Import) -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                                <span>Survey Status</span>
+                                <span class="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded">Auto Import</span>
+                            </label>
+                            <select id="map-status" class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                <option value="">-- Auto Detect (status: UNUSED/USED) --</option>
+                            </select>
+                        </div>
+
+                        <!-- Login Password -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Login Password</label>
+                            <select id="map-password" class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                <option value="">-- Auto Detect (password, login) --</option>
+                            </select>
+                        </div>
+
+                        <!-- Phone Number -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Phone Number</label>
+                            <select id="map-phone" class="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                <option value="">-- Auto Detect (phone, mobile, login) --</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="pt-2 text-[11px] text-slate-500 leading-normal flex items-start gap-1.5 border-t border-slate-200/60">
+                        <i data-lucide="info" class="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5"></i>
+                        <span>Select the entity attribute that corresponds to each Contact field. Values in <code class="bg-slate-200 px-1 py-0.5 rounded text-slate-700">"Name &lt;email@example.com&gt;"</code> format are automatically parsed. Survey status (<code class="bg-slate-200 px-1 py-0.5 rounded text-slate-700">UNUSED</code> / <code class="bg-slate-200 px-1 py-0.5 rounded text-slate-700">USED</code>) is auto-imported.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="pt-3 flex justify-end gap-2 border-t border-slate-100 flex-shrink-0">
+            <button type="button" onclick="closeImportEntitiesModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold text-xs hover:bg-slate-50 transition-colors">Cancel</button>
+            <button type="button" id="btn-confirm-import-entities" onclick="executeImportEntities()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1.5 transition-colors">
+                <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                Import Contacts
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Section 22: ODK Sync Result Modal -->
+<div id="sync-result-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 text-center space-y-4">
+        <div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto">
+            <i data-lucide="check-check" class="w-6 h-6"></i>
+        </div>
+        <h3 class="text-lg font-bold text-slate-900">ODK Sync Completed</h3>
+        
+        <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2 text-xs text-left">
+            <div class="flex justify-between"><span>Submissions Checked:</span><strong id="sync-res-checked" class="font-bold text-slate-800">0</strong></div>
+            <div class="flex justify-between"><span>New Submissions:</span><strong id="sync-res-new" class="font-bold text-blue-600">0</strong></div>
+            <div class="flex justify-between"><span>Contacts Marked USED:</span><strong id="sync-res-used" class="font-bold text-emerald-600">0</strong></div>
+            <div class="flex justify-between"><span>Unmatched JobIDs:</span><strong id="sync-res-unmatched" class="font-bold text-amber-600">0</strong></div>
+            <div class="flex justify-between"><span>Sync Duration:</span><strong id="sync-res-duration" class="font-bold text-slate-600">0s</strong></div>
+        </div>
+
+        <button onclick="closeSyncResultModal()" class="w-full py-2.5 bg-slate-900 text-white font-bold rounded-xl text-xs">Close</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let currentFormsPage = 1;
+    let currentFormsPageSize = 25;
+
+    let currentDatasetsPage = 1;
+    let currentDatasetsPageSize = 25;
+
+    let currentEntitiesPage = 1;
+    let currentEntitiesPageSize = 25;
+    let activeDatasetId = null;
+    let activeDatasetName = '';
+
+    function changeFormsPage(page) {
+        currentFormsPage = page;
+        loadODK(currentFormsPage);
+    }
+
+    function changeFormsPageSize(newSize) {
+        currentFormsPageSize = newSize;
+        currentFormsPage = 1;
+        loadODK(1);
+    }
+
+    function changeDatasetsPage(page) {
+        currentDatasetsPage = page;
+        loadDatasets(currentDatasetsPage);
+    }
+
+    function changeDatasetsPageSize(newSize) {
+        currentDatasetsPageSize = newSize;
+        currentDatasetsPage = 1;
+        loadDatasets(1);
+    }
+
+    function changeEntitiesPage(page) {
+        currentEntitiesPage = page;
+        loadDatasetEntities(currentEntitiesPage);
+    }
+
+    function changeEntitiesPageSize(newSize) {
+        currentEntitiesPageSize = newSize;
+        currentEntitiesPage = 1;
+        loadDatasetEntities(1);
+    }
+
+    async function loadODK(page = 1) {
+        currentFormsPage = page;
+        try {
+            const [cRes, fRes] = await Promise.all([
+                fetch('/api/odk/connections/'),
+                fetch(`/api/odk/forms/?page=${currentFormsPage}&page_size=${currentFormsPageSize}`)
+            ]);
+            const conns = (await cRes.json()).results || [];
+            const formsData = await fRes.json();
+            const forms = formsData.results || (Array.isArray(formsData) ? formsData : []);
+
+            const totalCount = formsData.count !== undefined ? formsData.count : forms.length;
+            const totalPages = formsData.total_pages || Math.ceil(totalCount / currentFormsPageSize) || 1;
+            const currentPage = formsData.current_page || currentFormsPage;
+
+            // Render Connections
+            const connContainer = document.getElementById('connections-grid');
+            if (conns.length === 0) {
+                connContainer.innerHTML = '<div class="col-span-full text-xs text-slate-400 py-4">No connections configured yet.</div>';
+            } else {
+                connContainer.innerHTML = conns.map(c => `
+                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between gap-3 hover:border-slate-200 transition-colors">
+                        <div class="min-w-0 flex-1">
+                            <div class="font-bold text-sm text-slate-900 flex items-center gap-2 flex-wrap">
+                                <span class="truncate">${escapeHtml(c.name)}</span>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${c.status === 'CONNECTED' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}">${escapeHtml(c.status)}</span>
+                                ${c.is_mock_sandbox ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800">Mock Sandbox</span>' : ''}
+                            </div>
+                            <div class="text-xs text-slate-500 font-mono mt-0.5 truncate" title="${escapeHtml(c.base_url)}">${escapeHtml(c.base_url)}</div>
+                            ${c.last_test_message ? `<div class="text-[11px] text-slate-400 mt-1 truncate" title="${escapeHtml(c.last_test_message)}">${escapeHtml(c.last_test_message)}</div>` : ''}
+                        </div>
+                        <div class="flex items-center gap-1.5 flex-shrink-0">
+                            <button onclick="testConnection(${c.id}, this)" class="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 font-bold text-xs rounded-xl shadow-sm transition-colors flex items-center gap-1" title="Test connection status">Test</button>
+                            <button onclick="discoverProjects(${c.id}, this)" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition-colors flex items-center gap-1" title="Discover projects, forms and entity lists">Discover</button>
+                            <button onclick="deleteConnection(${c.id}, this.dataset.name)" data-name="${escapeHtml(c.name)}" class="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors" title="Delete Connection">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+
+                    </div>
+                `).join('');
+            }
+
+            // Render Forms
+            const formsTbody = document.getElementById('forms-tbody');
+            if (forms.length === 0) {
+                formsTbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">No forms discovered yet. Click "Discover" on a connection.</td></tr>';
+                renderPagination({
+                    containerId: 'forms-pagination-container',
+                    totalCount: 0
+                });
+            } else {
+                formsTbody.innerHTML = forms.map(f => `
+                    <tr class="hover:bg-slate-50 text-xs">
+                        <td class="py-4 px-6 font-bold text-slate-900">${escapeHtml(f.name)}</td>
+                        <td class="py-4 px-6 font-mono text-slate-600">${escapeHtml(f.odk_xml_form_id)}</td>
+                        <td class="py-4 px-6">
+                            <span class="bg-blue-50 text-blue-700 font-mono font-bold px-2 py-0.5 rounded">Contact.JobID &harr; ${escapeHtml(f.field_mapping ? f.field_mapping.job_id_field : 'job_id')}</span>
+                        </td>
+                        <td class="py-4 px-6 text-center font-bold text-emerald-600 font-mono">${f.submissions_count}</td>
+                        <td class="py-4 px-6 text-slate-500">${f.last_sync_at ? new Date(f.last_sync_at).toLocaleString() : 'Never'}</td>
+                        <td class="py-4 px-6 text-right">
+                            <button onclick="syncFormNow(${f.id})" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm flex items-center gap-1.5 ml-auto">
+                                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                                Sync Now
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+
+                renderPagination({
+                    containerId: 'forms-pagination-container',
+                    totalCount: totalCount,
+                    currentPage: currentPage,
+                    pageSize: currentFormsPageSize,
+                    totalPages: totalPages,
+                    onPageChange: 'changeFormsPage',
+                    onPageSizeChange: 'changeFormsPageSize'
+                });
+            }
+            lucide.createIcons();
+        } catch (err) {
+            console.error(err);
+        }
+
+        // Also load datasets
+        loadDatasets(currentDatasetsPage);
+    }
+
+    async function loadDatasets(page = 1) {
+        currentDatasetsPage = page;
+        const tbody = document.getElementById('datasets-tbody');
+        try {
+            const res = await fetch(`/api/odk/datasets/?page=${currentDatasetsPage}&page_size=${currentDatasetsPageSize}`);
+            const data = await res.json();
+            const datasets = data.results || (Array.isArray(data) ? data : []);
+            const totalCount = data.count !== undefined ? data.count : datasets.length;
+            const totalPages = data.total_pages || Math.ceil(totalCount / currentDatasetsPageSize) || 1;
+            const currentPage = data.current_page || currentDatasetsPage;
+
+            if (datasets.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">No entity lists discovered yet. Click "Discover" on a connection.</td></tr>';
+                renderPagination({
+                    containerId: 'datasets-pagination-container',
+                    totalCount: 0
+                });
+            } else {
+                tbody.innerHTML = datasets.map(d => `
+                    <tr class="hover:bg-slate-50 text-xs">
+                        <td class="py-4 px-6 font-bold text-slate-900">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="file-spreadsheet" class="w-4 h-4 text-blue-500"></i>
+                                <span>${escapeHtml(d.name)}</span>
+                            </div>
+                        </td>
+                        <td class="py-4 px-6">
+                            <div class="font-medium text-slate-800">${escapeHtml(d.project_name || 'Project')}</div>
+                            <div class="text-[11px] text-slate-400">${escapeHtml(d.connection_name || '')}</div>
+                        </td>
+                        <td class="py-4 px-6 text-slate-600 max-w-xs truncate" title="${escapeHtml(d.description || '')}">
+                            ${escapeHtml(d.description || '-')}
+                        </td>
+                        <td class="py-4 px-6 text-center font-bold text-blue-600 font-mono text-sm">
+                            ${d.entities_count}
+                        </td>
+                        <td class="py-4 px-6 text-center">
+                            ${d.entities_count === 0 ? `
+                                <span class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-500">Not Synced</span>
+                            ` : `
+                                <div class="flex items-center justify-center gap-1.5 flex-wrap">
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800" title="${d.unused_count || 0} Unused entities">
+                                        ${d.unused_count || 0} Unused
+                                    </span>
+                                    ${(d.used_count || 0) > 0 ? `
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-slate-200 text-slate-700" title="${d.used_count} Used entities">
+                                        ${d.used_count} Used
+                                    </span>
+                                    ` : ''}
+                                </div>
+                            `}
+                        </td>
+                        <td class="py-4 px-6 text-slate-500">
+                            ${d.last_entity_at ? new Date(d.last_entity_at).toLocaleString() : 'Never'}
+                        </td>
+                        <td class="py-4 px-6 text-right">
+                            <div class="flex items-center justify-end gap-1.5">
+                                <button onclick="openEntitiesModal(${d.id}, '${escapeHtml(d.name)}', ${d.entities_count})" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors flex items-center gap-1">
+                                    <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                                    View Entities
+                                </button>
+                                <button onclick="syncDataset(${d.id}, '${escapeHtml(d.name)}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors flex items-center gap-1" title="Fetch latest entities from ODK">
+                                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                                    Sync
+                                </button>
+                                <button onclick="openImportEntitiesModal(${d.id}, '${escapeHtml(d.name)}')" class="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-sm transition-colors flex items-center gap-1" title="Import entities as Contacts">
+                                    <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+                                    Import
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+
+                renderPagination({
+                    containerId: 'datasets-pagination-container',
+                    totalCount: totalCount,
+                    currentPage: currentPage,
+                    pageSize: currentDatasetsPageSize,
+                    totalPages: totalPages,
+                    onPageChange: 'changeDatasetsPage',
+                    onPageSizeChange: 'changeDatasetsPageSize'
+                });
+            }
+            lucide.createIcons();
+        } catch (err) {
+            console.error('Failed to load datasets:', err);
+            tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-rose-500">Failed to load entity lists.</td></tr>';
+        }
+
+    }
+
+    async function syncDataset(datasetId, datasetName) {
+        try {
+            showToast(`Syncing entities for "${datasetName}"...`);
+            const res = await fetch(`/api/odk/datasets/${datasetId}/sync/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || `Synced ${data.entities_count} entities!`, 'success');
+                loadDatasets(currentDatasetsPage);
+                if (activeDatasetId === datasetId) {
+                    loadDatasetEntities(currentEntitiesPage);
+                }
+            } else {
+                showToast(data.error || 'Failed to sync dataset', 'error');
+            }
+        } catch (err) {
+            console.error(err);
+            showToast('Sync request failed', 'error');
+        }
+    }
+
+    function openEntitiesModal(datasetId, datasetName, count) {
+        activeDatasetId = datasetId;
+        activeDatasetName = datasetName;
+        document.getElementById('entities-modal-title').textContent = datasetName;
+        document.getElementById('entities-modal-subtitle').textContent = `Entities for dataset #${datasetId}`;
+        document.getElementById('entities-modal-count').textContent = `${count} Entities`;
+        document.getElementById('entities-modal').classList.remove('hidden');
+        currentEntitiesPage = 1;
+        loadDatasetEntities(1);
+    }
+
+    function closeEntitiesModal() {
+        document.getElementById('entities-modal').classList.add('hidden');
+    }
+
+    function syncActiveDataset() {
+        if (activeDatasetId) {
+            syncDataset(activeDatasetId, activeDatasetName);
+        }
+    }
+
+    function openImportModalFromView() {
+        if (activeDatasetId) {
+            openImportEntitiesModal(activeDatasetId, activeDatasetName);
+        }
+    }
+
+    async function loadDatasetEntities(page = 1) {
+        if (!activeDatasetId) return;
+        currentEntitiesPage = page;
+        const tbody = document.getElementById('entities-tbody');
+        tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">Loading entities...</td></tr>';
+        try {
+            const res = await fetch(`/api/odk/datasets/${activeDatasetId}/entities/?page=${currentEntitiesPage}&page_size=${currentEntitiesPageSize}`);
+            const data = await res.json();
+            const entities = data.results || (Array.isArray(data) ? data : []);
+            const totalCount = data.count !== undefined ? data.count : entities.length;
+            const totalPages = data.total_pages || Math.ceil(totalCount / currentEntitiesPageSize) || 1;
+            const currentPage = data.current_page || currentEntitiesPage;
+
+            document.getElementById('entities-modal-count').textContent = `${totalCount} Entities`;
+
+            if (entities.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">No entities found in this dataset. Click "Sync From ODK" to fetch them.</td></tr>';
+                renderPagination({
+                    containerId: 'modal-entities-pagination-container',
+                    totalCount: 0
+                });
+            } else {
+                tbody.innerHTML = entities.map(e => {
+                    const dataObj = e.data || {};
+                    const email = dataObj.email || dataObj.Email || dataObj.respondent_email || '';
+                    const phone = dataObj.phone || dataObj.phone_number || '';
+                    const jobId = dataObj.job_id || dataObj.jobId || dataObj.JobID || dataObj.token || '';
+                    
+                    // Display pills for known or extra properties
+                    let propsHtml = [];
+                    if (email) propsHtml.push(`<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-mono"><i data-lucide="mail" class="w-3 h-3"></i>${escapeHtml(email)}</span>`);
+                    if (jobId) propsHtml.push(`<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-mono"><i data-lucide="tag" class="w-3 h-3"></i>${escapeHtml(jobId)}</span>`);
+                    if (phone) propsHtml.push(`<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono"><i data-lucide="phone" class="w-3 h-3"></i>${escapeHtml(phone)}</span>`);
+
+                    if (propsHtml.length === 0) {
+                        const keys = Object.keys(dataObj).filter(k => !k.startsWith('__')).slice(0, 3);
+                        propsHtml = keys.map(k => `<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono">${escapeHtml(k)}: ${escapeHtml(String(dataObj[k]))}</span>`);
+                    }
+
+                    const isUsed = String(e.status).toUpperCase() === 'USED';
+
+                    return `
+                        <tr class="hover:bg-slate-50">
+                            <td class="py-3 px-4 font-bold text-slate-900">${escapeHtml(e.label || '(Unnamed Entity)')}</td>
+                            <td class="py-3 px-4 font-mono text-slate-500 truncate max-w-[140px]" title="${escapeHtml(e.uuid)}">${escapeHtml(e.uuid)}</td>
+                            <td class="py-3 px-4 text-center">
+                                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${isUsed ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-800'}">
+                                    ${escapeHtml(e.status || 'UNUSED')}
+                                </span>
+                            </td>
+                            <td class="py-3 px-4">
+                                <div class="flex flex-wrap gap-1.5 items-center">
+                                    ${propsHtml.join(' ')}
+                                </div>
+                            </td>
+                            <td class="py-3 px-4 text-center font-mono text-slate-600">v${e.version || 1}</td>
+                            <td class="py-3 px-4 text-slate-500 whitespace-nowrap">${e.created_at ? new Date(e.created_at).toLocaleDateString() : '-'}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                renderPagination({
+                    containerId: 'modal-entities-pagination-container',
+                    totalCount: totalCount,
+                    currentPage: currentPage,
+                    pageSize: currentEntitiesPageSize,
+                    totalPages: totalPages,
+                    onPageChange: 'changeEntitiesPage',
+                    onPageSizeChange: 'changeEntitiesPageSize'
+                });
+            }
+            lucide.createIcons();
+        } catch (err) {
+            console.error('Error loading entities:', err);
+            tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-rose-500">Failed to load entities.</td></tr>';
+        }
+    }
+
+
+    let currentDatasetFields = [];
+    let currentDatasetSamples = {};
+
+    async function openImportEntitiesModal(datasetId, datasetName) {
+        activeDatasetId = datasetId;
+        activeDatasetName = datasetName;
+        document.getElementById('import-dataset-name').textContent = `"${datasetName}"`;
+        document.getElementById('import-new-group-box').classList.add('hidden');
+        document.getElementById('import-new-group-name').value = '';
+
+        // Load existing contact groups into select
+        const select = document.getElementById('import-group-select');
+        select.innerHTML = `
+            <option value="">-- Do not add to a group --</option>
+            <option value="__new__">+ Create New Group...</option>
+        `;
+        try {
+            const res = await fetch('/api/groups/');
+            const data = await res.json();
+            const groups = data.results || (Array.isArray(data) ? data : []);
+            groups.forEach(g => {
+                const opt = document.createElement('option');
+                opt.value = g.id;
+                opt.dataset.selectedFields = JSON.stringify(g.selected_fields || []);
+                opt.dataset.fieldMappings = JSON.stringify(g.field_mappings || {});
+                opt.textContent = `${g.name} (${g.contact_count || 0} contacts)`;
+                select.appendChild(opt);
+            });
+        } catch (err) {
+            console.error('Failed to load groups:', err);
+        }
+
+        document.getElementById('import-entities-modal').classList.remove('hidden');
+        lucide.createIcons();
+
+        // Load dataset attributes for manual field mapping
+        await loadDatasetFieldsForMapping(datasetId);
+    }
+
+    async function loadDatasetFieldsForMapping(datasetId) {
+        const loader = document.getElementById('mapping-loading-indicator');
+        const container = document.getElementById('mapping-fields-container');
+        if (loader) loader.classList.remove('hidden');
+        if (container) container.classList.add('hidden');
+
+        try {
+            const res = await fetch(`/api/odk/datasets/${datasetId}/fields/`);
+            if (!res.ok) throw new Error('Failed to fetch dataset fields');
+            const data = await res.json();
+            currentDatasetFields = data.fields || [];
+            currentDatasetSamples = data.samples || {};
+
+            populateMappingDropdowns();
+            autoDetectMapping();
+
+            if (loader) loader.classList.add('hidden');
+            if (container) container.classList.remove('hidden');
+        } catch (err) {
+            console.error('Error loading dataset fields:', err);
+            if (loader) loader.innerHTML = '<span class="text-rose-500">Could not detect dataset fields. Standard mapping will be used.</span>';
+        }
+        lucide.createIcons();
+    }
+
+    function populateMappingDropdowns() {
+        const dropdownIds = [
+            { id: 'map-email', autoLabel: '-- Auto Detect (email, respondent_email) --' },
+            { id: 'map-name', autoLabel: '-- Auto Detect (p_name, respondent_name) --' },
+            { id: 'map-first-name', autoLabel: '-- Optional / Split from Full Name --' },
+            { id: 'map-last-name', autoLabel: '-- Optional / Split from Full Name --' },
+            { id: 'map-job-id', autoLabel: '-- Auto Detect (job_id, token, label) --' },
+            { id: 'map-status', autoLabel: '-- Auto Detect (status: UNUSED/USED) --' },
+            { id: 'map-password', autoLabel: '-- Auto Detect (password, login) --' },
+            { id: 'map-phone', autoLabel: '-- Auto Detect (phone, mobile, login) --' },
+        ];
+
+        dropdownIds.forEach(({ id, autoLabel }) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.innerHTML = `<option value="">${autoLabel}</option>`;
+
+            currentDatasetFields.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f;
+                const sample = currentDatasetSamples[f];
+                if (sample) {
+                    const snippet = sample.length > 25 ? sample.substring(0, 22) + '...' : sample;
+                    opt.textContent = `${f} (e.g. "${snippet}")`;
+                } else {
+                    opt.textContent = f;
+                }
+                el.appendChild(opt);
+            });
+        });
+    }
+
+    function autoDetectMapping() {
+        // 1. Auto Email
+        const emailMatches = ['respondent_email', 'email', 'Email', 'email_address', 'mail', 'respondent_mail'];
+        const foundEmail = currentDatasetFields.find(f => emailMatches.includes(f)) ||
+                           currentDatasetFields.find(f => {
+                               const sample = currentDatasetSamples[f] || '';
+                               return sample.includes('@') && !f.startsWith('__');
+                           });
+        setSelectVal('map-email', foundEmail);
+
+        // 2. Auto Name
+        const nameMatches = ['p_name', 'respondent_name', 'name', 'full_name', 'e_name', 'farmer_name'];
+        const foundName = currentDatasetFields.find(f => nameMatches.includes(f));
+        setSelectVal('map-name', foundName);
+
+        // 3. Auto First Name
+        const fnameMatches = ['first_name', 'firstname', 'fname', 'first'];
+        const foundFName = currentDatasetFields.find(f => fnameMatches.includes(f));
+        setSelectVal('map-first-name', foundFName);
+
+        // 4. Auto Last Name
+        const lnameMatches = ['last_name', 'lastname', 'lname', 'surname', 'last'];
+        const foundLName = currentDatasetFields.find(f => lnameMatches.includes(f));
+        setSelectVal('map-last-name', foundLName);
+
+        // 5. Auto Job ID / Token
+        const jobIdMatches = ['job_id', 'jobId', 'JobID', 'token', 'farmer_code', 'label'];
+        const foundJobId = currentDatasetFields.find(f => jobIdMatches.includes(f));
+        setSelectVal('map-job-id', foundJobId);
+
+        // 6. Auto Survey Status (Auto-Imported)
+        const statusMatches = ['status', 'Status', 'usage_status', 'state', 'used', 'survey_status'];
+        const foundStatus = currentDatasetFields.find(f => statusMatches.includes(f));
+        setSelectVal('map-status', foundStatus);
+
+        // 7. Auto Password
+        const passMatches = ['password', 'pass', 'pwd', 'login_password'];
+        const foundPass = currentDatasetFields.find(f => passMatches.includes(f));
+        setSelectVal('map-password', foundPass);
+
+        // 8. Auto Phone
+        const phoneMatches = ['phone', 'phone_number', 'phoneNumber', 'mobile', 'cell'];
+        let foundPhone = currentDatasetFields.find(f => phoneMatches.includes(f));
+        if (!foundPhone && currentDatasetFields.includes('login') && foundPass !== 'login') {
+            const loginSample = currentDatasetSamples['login'] || '';
+            if (/^\+?\d{8,}$/.test(loginSample.replace(/\s+/g, ''))) {
+                foundPhone = 'login';
+            }
+        }
+        setSelectVal('map-phone', foundPhone);
+    }
+
+    function setSelectVal(id, val) {
+        const el = document.getElementById(id);
+        if (el) el.value = val || '';
+    }
+
+    function closeImportEntitiesModal() {
+        document.getElementById('import-entities-modal').classList.add('hidden');
+    }
+
+    function toggleNewGroupInput() {
+        const val = document.getElementById('import-group-select').value;
+        const box = document.getElementById('import-new-group-box');
+        if (val === '__new__') {
+            box.classList.remove('hidden');
+            document.getElementById('import-new-group-name').focus();
+        } else {
+            box.classList.add('hidden');
+        }
+    }
+
+    function onImportGroupSelectChange() {
+        toggleNewGroupInput();
+        const select = document.getElementById('import-group-select');
+        const selectedOpt = select.options[select.selectedIndex];
+        const noticeEl = document.getElementById('group-mapping-notice');
+
+        if (selectedOpt && selectedOpt.dataset && selectedOpt.dataset.fieldMappings) {
+            try {
+                const mappings = JSON.parse(selectedOpt.dataset.fieldMappings || '{}');
+                const selectedFields = JSON.parse(selectedOpt.dataset.selectedFields || '[]');
+                if (mappings && Object.keys(mappings).length > 0) {
+                    if (mappings.email) setSelectVal('map-email', mappings.email);
+                    if (mappings.name) setSelectVal('map-name', mappings.name);
+                    if (mappings.first_name) setSelectVal('map-first-name', mappings.first_name);
+                    if (mappings.last_name) setSelectVal('map-last-name', mappings.last_name);
+                    if (mappings.job_id) setSelectVal('map-job-id', mappings.job_id);
+                    if (mappings.status) setSelectVal('map-status', mappings.status);
+                    if (mappings.password) setSelectVal('map-password', mappings.password);
+                    if (mappings.phone) setSelectVal('map-phone', mappings.phone);
+
+                    if (noticeEl) {
+                        noticeEl.classList.remove('hidden');
+                        const fieldPills = selectedFields.map(f => `<span class="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-mono font-bold text-[10px]">${f}</span>`).join(' ');
+                        noticeEl.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4 text-emerald-600 flex-shrink-0"></i> <span>Loaded saved group fields for <b>${escapeHtml(selectedOpt.text.split('(')[0].trim())}</b>: ${fieldPills}</span>`;
+                        lucide.createIcons();
+                    }
+                    return;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        if (noticeEl) noticeEl.classList.add('hidden');
+    }
+
+    async function executeImportEntities() {
+        if (!activeDatasetId) return;
+        const select = document.getElementById('import-group-select');
+        const isNew = select.value === '__new__';
+        const groupId = (!isNew && select.value) ? select.value : null;
+        const newGroupName = isNew ? document.getElementById('import-new-group-name').value.trim() : null;
+
+        if (isNew && !newGroupName) {
+            showToast('Please enter a name for the new group.', 'error');
+            return;
+        }
+
+        const mapping = {
+            email: document.getElementById('map-email')?.value || null,
+            name: document.getElementById('map-name')?.value || null,
+            first_name: document.getElementById('map-first-name')?.value || null,
+            last_name: document.getElementById('map-last-name')?.value || null,
+            job_id: document.getElementById('map-job-id')?.value || null,
+            status: document.getElementById('map-status')?.value || null,
+            password: document.getElementById('map-password')?.value || null,
+            phone: document.getElementById('map-phone')?.value || null
+        };
+
+        const btn = document.getElementById('btn-confirm-import-entities');
+        const origText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> Importing...';
+        lucide.createIcons();
+
+        try {
+            const res = await fetch(`/api/odk/datasets/${activeDatasetId}/import-to-contacts/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    group_id: groupId,
+                    group_name: newGroupName,
+                    mapping: mapping
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || `Contacts imported successfully!`, 'success');
+                closeImportEntitiesModal();
+                loadDatasets(currentDatasetsPage);
+            } else {
+                showToast('Import failed: ' + (data.error || JSON.stringify(data)), 'error');
+            }
+        } catch (err) {
+            console.error(err);
+            showToast('Network error while importing entities.', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = origText;
+            lucide.createIcons();
+        }
+    }
+
+    async function testConnection(id, btn) {
+        let origHtml = '';
+        if (btn) {
+            origHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> Testing...';
+            lucide.createIcons();
+        }
+        try {
+            const res = await fetch(`/api/odk/connections/${id}/test/`, { method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
+            const data = await res.json();
+            showToast(data.message, data.success ? 'success' : 'error');
+            loadODK();
+        } catch (err) {
+            console.error(err);
+            showToast('Connection test failed', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = origHtml;
+                lucide.createIcons();
+            }
+        }
+    }
+
+    async function discoverProjects(id, btn) {
+        let origHtml = '';
+        if (btn) {
+            origHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> Discovering...';
+            lucide.createIcons();
+        }
+        showToast('Connecting to ODK Central to discover projects, forms and entity lists (this may take a few seconds)...');
+        try {
+            const res = await fetch(`/api/odk/connections/${id}/discover/`, { method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
+            const data = await res.json();
+            if (data.status === 'success') {
+                const projCount = (data.projects || []).length;
+                let formsCount = 0;
+                let datasetsCount = 0;
+                (data.projects || []).forEach(p => {
+                    formsCount += p.forms_count || 0;
+                    datasetsCount += p.datasets_count || 0;
+                });
+                showToast(`Discovered ${formsCount} forms and ${datasetsCount} entity lists across ${projCount} projects!`, 'success');
+                loadODK();
+                loadDatasets(1);
+            } else {
+                alert('Discovery failed: ' + (data.error || ''));
+            }
+        } catch (err) {
+            console.error(err);
+            showToast('Discovery request failed', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = origHtml;
+                lucide.createIcons();
+            }
+        }
+    }
+
+    async function deleteConnection(id, name) {
+        const connName = name || `#${id}`;
+        if (!confirm(`Are you sure you want to delete ODK connection "${connName}"?\n\nAll projects, forms, entity lists, and sync history linked to this connection will also be removed.`)) {
+            return;
+        }
+        try {
+            const res = await fetch(`/api/odk/connections/${id}/`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': getCsrfToken()
+                }
+            });
+            if (res.ok || res.status === 204) {
+                showToast(`Connection "${connName}" deleted successfully`);
+                loadODK(1);
+                loadDatasets(1);
+            } else {
+                let errText = '';
+                try {
+                    const errData = await res.json();
+                    errText = errData.error || errData.detail || JSON.stringify(errData);
+                } catch (_) {
+                    errText = `HTTP ${res.status}`;
+                }
+                showToast(`Failed to delete connection: ${errText}`, 'error');
+            }
+        } catch (err) {
+            console.error('Error deleting connection:', err);
+            showToast('Failed to delete connection', 'error');
+        }
+    }
+
+    async function syncFormNow(id) {
+        try {
+            const res = await fetch(`/api/odk/forms/${id}/sync/`, { method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
+            const data = await res.json();
+            if (res.ok) {
+                document.getElementById('sync-res-checked').textContent = data.submissions_checked.toLocaleString();
+                document.getElementById('sync-res-new').textContent = data.new_submissions.toLocaleString();
+                document.getElementById('sync-res-used').textContent = data.contacts_marked_used.toLocaleString();
+                document.getElementById('sync-res-unmatched').textContent = data.unmatched_job_ids.toLocaleString();
+                document.getElementById('sync-res-duration').textContent = `${data.duration_seconds}s`;
+                document.getElementById('sync-result-modal').classList.remove('hidden');
+                loadODK();
+            } else {
+                alert('Sync failed: ' + (data.error || ''));
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    function closeSyncResultModal() { document.getElementById('sync-result-modal').classList.add('hidden'); }
+    function openAddConnectionModal() { document.getElementById('conn-modal').classList.remove('hidden'); }
+    function closeAddConnectionModal() { document.getElementById('conn-modal').classList.add('hidden'); }
+
+    async function submitAddConnection(e) {
+        e.preventDefault();
+        const payload = {
+            name: document.getElementById('conn-name').value,
+            base_url: document.getElementById('conn-url').value,
+            username: document.getElementById('conn-user').value,
+            password_or_token: document.getElementById('conn-token').value,
+            is_mock_sandbox: document.getElementById('conn-is-sandbox').checked,
+        };
+        const res = await fetch('/api/odk/connections/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+            const newConn = await res.json();
+            showToast('Connection added! Discovering forms and entity lists...');
+            closeAddConnectionModal();
+            loadODK();
+            if (newConn && newConn.id) {
+                discoverProjects(newConn.id);
+            }
+        } else {
+            const err = await res.json();
+            alert('Error: ' + JSON.stringify(err));
+        }
+    }
+
+
+    loadODK();
+</script>
+{% endblock %}
+

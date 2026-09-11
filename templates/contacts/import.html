@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+
+{% block page_title %}Import Contacts{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-8">
+    <!-- Step Indicator -->
+    <div class="flex items-center justify-between px-6 py-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm text-sm">
+        <div id="step-ind-1" class="flex items-center gap-2 font-bold text-blue-600">
+            <span class="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">1</span>
+            Upload File
+        </div>
+        <div class="h-0.5 w-12 bg-slate-200"></div>
+        <div id="step-ind-2" class="flex items-center gap-2 font-medium text-slate-400">
+            <span class="w-7 h-7 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-xs">2</span>
+            Map Columns
+        </div>
+        <div class="h-0.5 w-12 bg-slate-200"></div>
+        <div id="step-ind-3" class="flex items-center gap-2 font-medium text-slate-400">
+            <span class="w-7 h-7 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-xs">3</span>
+            Review & Execute
+        </div>
+    </div>
+
+    <!-- Step 1: File Upload -->
+    <div id="section-step-1" class="bg-white p-8 rounded-3xl border border-slate-200/80 shadow-sm space-y-6">
+        <div>
+            <h2 class="text-lg font-bold text-slate-900">Upload CSV or Excel Spreadsheet</h2>
+            <p class="text-slate-500 text-xs mt-1">Supports UTF-8 CSV and XLSX format containing respondent data, JobIDs, and passwords.</p>
+        </div>
+
+        <div id="target-group-badge" class="hidden p-3.5 bg-blue-50 border border-blue-200/80 rounded-2xl flex items-center justify-between text-xs">
+            <div class="flex items-center gap-2 text-blue-900 font-semibold">
+                <i data-lucide="folder" class="w-4 h-4 text-blue-600"></i>
+                <span>Importing contacts directly into group: <strong id="target-group-name" class="font-bold text-blue-950"></strong></span>
+            </div>
+            <a href="/contacts/import/" class="text-blue-600 hover:text-blue-800 text-[11px] font-medium underline">Clear group assignment</a>
+        </div>
+
+        <div class="border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center hover:border-blue-400 transition-colors bg-slate-50/50 cursor-pointer" onclick="document.getElementById('import-file-input').click()">
+            <input type="file" id="import-file-input" accept=".csv, .xlsx" class="hidden" onchange="handleFileSelected(event)">
+            <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                <i data-lucide="file-spreadsheet" class="w-6 h-6"></i>
+            </div>
+            <div class="text-sm font-bold text-slate-700" id="file-select-label">Click to select file or drag & drop</div>
+            <div class="text-xs text-slate-400 mt-1">.CSV or .XLSX up to 50MB</div>
+        </div>
+
+        <div class="flex justify-end">
+            <button id="btn-upload-file" disabled onclick="uploadImportFile()" class="px-6 py-2.5 bg-blue-600 disabled:opacity-50 text-white font-bold text-sm rounded-xl shadow-md transition-all flex items-center gap-2">
+                Continue to Column Mapping &rarr;
+            </button>
+        </div>
+    </div>
+
+    <!-- Step 2: Field Mapping (Section 11) -->
+    <div id="section-step-2" class="hidden bg-white p-8 rounded-3xl border border-slate-200/80 shadow-sm space-y-6">
+        <div>
+            <h2 class="text-lg font-bold text-slate-900">Map Columns to Contact Fields</h2>
+            <p class="text-slate-500 text-xs mt-1">Match file headers with system fields. Email and JobID are mandatory for survey campaigns.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm" id="mapping-fields-grid">
+            <!-- Dynamically populated field selectors -->
+        </div>
+
+        <div class="flex justify-between pt-4 border-t border-slate-100">
+            <button onclick="goToStep(1)" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50 text-sm">Back</button>
+            <button onclick="analyzeMappedImport()" class="px-6 py-2.5 bg-blue-600 text-white font-bold text-sm rounded-xl shadow-md flex items-center gap-2">
+                Analyze Data & Validate &rarr;
+            </button>
+        </div>
+    </div>
+
+    <!-- Step 3: Analysis & Execute (Section 11) -->
+    <div id="section-step-3" class="hidden bg-white p-8 rounded-3xl border border-slate-200/80 shadow-sm space-y-6">
+        <div>
+            <h2 class="text-lg font-bold text-slate-900">Pre-Import Validation Summary</h2>
+            <p class="text-slate-500 text-xs mt-1">Review data health before importing contacts into the database.</p>
+        </div>
+
+        <!-- Section 11 Validation Metrics Display -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+            <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <div class="text-xs text-slate-500 font-bold uppercase">Total Rows</div>
+                <div id="val-total" class="text-2xl font-extrabold text-slate-900 mt-1">0</div>
+            </div>
+            <div class="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 text-emerald-800">
+                <div class="text-xs font-bold uppercase">Valid Contacts</div>
+                <div id="val-valid" class="text-2xl font-extrabold mt-1">0</div>
+            </div>
+            <div class="p-4 bg-blue-50 rounded-2xl border border-blue-100 text-blue-800">
+                <div class="text-xs font-bold uppercase">New Contacts</div>
+                <div id="val-new" class="text-2xl font-extrabold mt-1">0</div>
+            </div>
+            <div class="p-4 bg-slate-100 rounded-2xl border border-slate-200 text-slate-800">
+                <div class="text-xs font-bold uppercase">Existing Contacts</div>
+                <div id="val-existing" class="text-2xl font-extrabold mt-1">0</div>
+            </div>
+            <div class="p-4 bg-amber-50 rounded-2xl border border-amber-100 text-amber-800">
+                <div class="text-xs font-bold uppercase">Duplicate Rows</div>
+                <div id="val-dups" class="text-2xl font-extrabold mt-1">0</div>
+            </div>
+            <div class="p-4 bg-rose-50 rounded-2xl border border-rose-100 text-rose-800">
+                <div class="text-xs font-bold uppercase">Invalid Emails</div>
+                <div id="val-invalid-emails" class="text-2xl font-extrabold mt-1">0</div>
+            </div>
+            <div class="p-4 bg-rose-50 rounded-2xl border border-rose-100 text-rose-800">
+                <div class="text-xs font-bold uppercase">Missing Emails</div>
+                <div id="val-missing-emails" class="text-2xl font-extrabold mt-1">0</div>
+            </div>
+            <div class="p-4 bg-rose-50 rounded-2xl border border-rose-100 text-rose-800">
+                <div class="text-xs font-bold uppercase">Missing JobID</div>
+                <div id="val-missing-jobids" class="text-2xl font-extrabold mt-1">0</div>
+            </div>
+        </div>
+
+        <!-- Import Strategy & Group Selection -->
+        <div class="pt-4 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-2">Duplicate Resolution Strategy</label>
+                <select id="import-dup-strategy" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="UPDATE">Update existing contacts with new values</option>
+                    <option value="SKIP">Skip duplicate contacts</option>
+                    <option value="ADD_TO_GROUP">Add existing contacts to selected group without overwriting</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-2">Add to Contact Group (Optional)</label>
+                <select id="import-target-group" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">Do not add to group</option>
+                    {% for g in groups %}
+                    <option value="{{ g.id }}">{{ g.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="flex justify-between pt-4 border-t border-slate-100">
+            <button onclick="goToStep(2)" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50 text-sm">Back</button>
+            <button onclick="executeFinalImport()" id="btn-exec-import" class="px-7 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-emerald-600/25 flex items-center gap-2">
+                <i data-lucide="check-circle" class="w-4 h-4"></i>
+                Start Import
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let activeImportJobId = null;
+    let fileHeaders = [];
+    let suggestedMapping = {};
+
+    function handleFileSelected(e) {
+        const file = e.target.files[0];
+        if (file) {
+            document.getElementById('file-select-label').textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+            document.getElementById('btn-upload-file').disabled = false;
+        }
+    }
+
+    async function uploadImportFile() {
+        const fileInput = document.getElementById('import-file-input');
+        if (!fileInput.files[0]) return;
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        const btn = document.getElementById('btn-upload-file');
+        btn.textContent = 'Uploading & Parsing...';
+        btn.disabled = true;
+
+        try {
+            const res = await fetch('/api/imports/upload/', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCsrfToken() },
+                body: formData
+            });
+            const data = await res.json();
+            if (res.ok) {
+                activeImportJobId = data.import_job_id;
+                fileHeaders = data.headers;
+                suggestedMapping = data.suggested_mapping || {};
+                renderMappingFields();
+                goToStep(2);
+            } else {
+                alert('Upload failed: ' + (data.error || 'Unknown error'));
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Upload request failed.');
+        } finally {
+            btn.textContent = 'Continue to Column Mapping \u2192';
+            btn.disabled = false;
+        }
+    }
+
+    const TARGET_FIELDS = [
+        { key: 'email', label: 'Email Address *', required: true },
+        { key: 'job_id', label: 'JobID (Survey Identifier / Link)', required: false },
+        { key: 'name', label: 'Full Name', required: false },
+        { key: 'first_name', label: 'First Name', required: false },
+        { key: 'last_name', label: 'Last Name', required: false },
+        { key: 'phone_number', label: 'Phone Number', required: false },
+        { key: 'login_password', label: 'Login Password (Survey Credential)', required: false },
+        { key: 'status', label: 'Status (Used / Unused)', required: false },
+    ];
+
+    function renderMappingFields() {
+        const container = document.getElementById('mapping-fields-grid');
+        const headerOptions = ['<option value="">-- Do not import --</option>']
+            .concat(fileHeaders.map(h => `<option value="${h}">${h}</option>`)).join('');
+
+        container.innerHTML = TARGET_FIELDS.map(f => {
+            const autoMatch = suggestedMapping[f.key] || '';
+            return `
+                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <label class="block text-xs font-bold text-slate-800 uppercase mb-1.5">${f.label}</label>
+                    <select id="map-${f.key}" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                        ${headerOptions}
+                    </select>
+                </div>
+            `;
+        }).join('');
+
+        // Apply auto-matched selections
+        TARGET_FIELDS.forEach(f => {
+            if (suggestedMapping[f.key]) {
+                const el = document.getElementById(`map-${f.key}`);
+                if (el) el.value = suggestedMapping[f.key];
+            }
+        });
+    }
+
+    function getSelectedMapping() {
+        const mapping = {};
+        TARGET_FIELDS.forEach(f => {
+            const el = document.getElementById(`map-${f.key}`);
+            if (el && el.value) mapping[f.key] = el.value;
+        });
+        return mapping;
+    }
+
+    async function analyzeMappedImport() {
+        const mapping = getSelectedMapping();
+        if (!mapping.email) {
+            alert('Please map the Email Address field before continuing.');
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/imports/${activeImportJobId}/analyze/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify({ field_mapping: mapping })
+            });
+            const stats = await res.json();
+            if (res.ok) {
+                document.getElementById('val-total').textContent = stats.total_rows.toLocaleString();
+                document.getElementById('val-valid').textContent = stats.valid_contacts.toLocaleString();
+                document.getElementById('val-new').textContent = stats.new_contacts.toLocaleString();
+                document.getElementById('val-existing').textContent = stats.existing_contacts.toLocaleString();
+                document.getElementById('val-dups').textContent = stats.duplicate_rows.toLocaleString();
+                document.getElementById('val-invalid-emails').textContent = stats.invalid_emails.toLocaleString();
+                document.getElementById('val-missing-emails').textContent = stats.missing_emails.toLocaleString();
+                document.getElementById('val-missing-jobids').textContent = stats.missing_job_ids.toLocaleString();
+                goToStep(3);
+            } else {
+                alert('Analysis failed: ' + (stats.error || ''));
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    async function executeFinalImport() {
+        const btn = document.getElementById('btn-exec-import');
+        btn.disabled = true;
+        btn.textContent = 'Importing contacts...';
+
+        const mapping = getSelectedMapping();
+        const dupStrategy = document.getElementById('import-dup-strategy').value;
+        const targetGroup = document.getElementById('import-target-group').value;
+
+        try {
+            const res = await fetch(`/api/imports/${activeImportJobId}/execute/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify({
+                    field_mapping: mapping,
+                    duplicate_strategy: dupStrategy,
+                    target_group_id: targetGroup || null
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(`Import completed! Created: ${data.result.created}, Updated: ${data.result.updated}`);
+                setTimeout(() => { window.location.href = '/contacts/'; }, 1500);
+            } else {
+                alert('Import execution failed: ' + (data.error || ''));
+                btn.disabled = false;
+                btn.textContent = 'Start Import';
+            }
+        } catch (err) {
+            console.error(err);
+            btn.disabled = false;
+            btn.textContent = 'Start Import';
+        }
+    }
+
+    function goToStep(step) {
+        ['1', '2', '3'].forEach(s => {
+            document.getElementById(`section-step-${s}`).classList.toggle('hidden', s !== `${step}`);
+            const ind = document.getElementById(`step-ind-${s}`);
+            if (s === `${step}`) {
+                ind.className = 'flex items-center gap-2 font-bold text-blue-600';
+                ind.querySelector('span').className = 'w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs';
+            } else if (parseInt(s) < step) {
+                ind.className = 'flex items-center gap-2 font-semibold text-emerald-600';
+                ind.querySelector('span').className = 'w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs';
+            } else {
+                ind.className = 'flex items-center gap-2 font-medium text-slate-400';
+                ind.querySelector('span').className = 'w-7 h-7 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-xs';
+            }
+        });
+        lucide.createIcons();
+    }
+
+    // Handle initial group query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialGroupId = urlParams.get('group');
+    if (initialGroupId) {
+        const targetSelect = document.getElementById('import-target-group');
+        if (targetSelect) {
+            targetSelect.value = initialGroupId;
+            const selectedOpt = targetSelect.options[targetSelect.selectedIndex];
+            if (selectedOpt && selectedOpt.value) {
+                document.getElementById('target-group-name').textContent = selectedOpt.text;
+                document.getElementById('target-group-badge').classList.remove('hidden');
+                lucide.createIcons();
+            }
+        }
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,572 @@
+{% extends "base.html" %}
+
+{% block page_title %}Custom Contact Fields{% endblock %}
+
+{% block header_actions %}
+<div class="flex items-center gap-2">
+    <button onclick="openCreateGroupModal()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl flex items-center gap-1.5 transition-all">
+        <i data-lucide="folder-plus" class="w-4 h-4 text-slate-500"></i>
+        New Group
+    </button>
+    <button id="btn-add-group-field" onclick="openAddGroupFieldModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-md shadow-blue-500/20 flex items-center gap-2 transition-all">
+        <i data-lucide="plus" class="w-4 h-4"></i>
+        Add Custom Field
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Info Banner -->
+    <div class="bg-blue-50 border border-blue-200/80 p-4 rounded-2xl flex items-start gap-3">
+        <i data-lucide="info" class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5"></i>
+        <div class="text-xs text-blue-900 leading-relaxed">
+            Custom fields are <strong>group-specific</strong> and mapped from ODK Central or file imports (e.g. <code>District</code>, <code>Survey URL</code>, <code>Tribe</code>, <code>Age</code>). 
+            Toggle a field's status to <strong>Active</strong> to display it as a column in the contacts table and in add/edit contact forms.
+            Each field slug automatically works as an email variable tag (e.g. {% verbatim %}<code class="bg-blue-100 text-blue-800 px-1 py-0.5 rounded font-mono font-bold">{{slug}}</code>{% endverbatim %}).
+        </div>
+    </div>
+
+    <!-- Group Selector Bar -->
+    <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div class="flex items-center gap-3 w-full md:w-auto">
+            <div class="p-2 bg-violet-50 text-violet-600 rounded-xl">
+                <i data-lucide="folder-kanban" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400">Select Contact Group</label>
+                <div class="flex items-center gap-2 mt-0.5">
+                    <select id="group-select" onchange="onGroupChange(this.value)" class="px-3.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[240px]">
+                        <option value="">Loading groups...</option>
+                    </select>
+                    <span id="selected-group-badge" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-violet-50 text-violet-700">0 contacts</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-6 text-xs text-slate-500 border-t md:border-t-0 pt-3 md:pt-0 w-full md:w-auto justify-between md:justify-end">
+            <div>
+                <span class="text-slate-400 block text-[10px] uppercase font-bold">Total Fields</span>
+                <span class="font-extrabold text-slate-800 text-sm" id="stat-total-fields">0</span>
+            </div>
+            <div>
+                <span class="text-slate-400 block text-[10px] uppercase font-bold">Active in Table</span>
+                <span class="font-extrabold text-emerald-600 text-sm" id="stat-active-fields">0</span>
+            </div>
+            <div>
+                <span class="text-slate-400 block text-[10px] uppercase font-bold">Inactive</span>
+                <span class="font-extrabold text-slate-400 text-sm" id="stat-inactive-fields">0</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Group Custom Fields Table Card -->
+    <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <h3 class="text-sm font-bold text-slate-900" id="table-group-title">Group Custom Fields</h3>
+                <span id="group-source-badge" class="hidden px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded-md">ODK Mapped</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs text-slate-400">
+                <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span> Active = visible in table &amp; modals
+            </div>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        <th class="py-3.5 px-6">Field Name</th>
+                        <th class="py-3.5 px-6">Variable Token</th>
+                        <th class="py-3.5 px-6">Type</th>
+                        <th class="py-3.5 px-6">Status</th>
+                        <th class="py-3.5 px-6">Description</th>
+                        <th class="py-3.5 px-6 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="group-fields-tbody" class="divide-y divide-slate-100">
+                    <tr><td colspan="6" class="py-12 text-center text-slate-400">Loading custom fields...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <!-- Pagination Container -->
+        <div id="cf-pagination-container"></div>
+    </div>
+</div>
+
+<!-- Modal: Add Group Custom Field -->
+<div id="add-field-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+            <div class="flex items-center gap-2">
+                <div class="p-1.5 bg-blue-50 text-blue-600 rounded-lg"><i data-lucide="plus" class="w-4 h-4"></i></div>
+                <h3 class="text-base font-bold text-slate-900">Add Field to <span id="modal-group-name" class="text-blue-600"></span></h3>
+            </div>
+            <button onclick="closeAddGroupFieldModal()" class="text-slate-400 hover:text-slate-600 p-1"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <form onsubmit="submitAddGroupField(event)" class="space-y-4 pt-4 text-sm">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Field Name *</label>
+                <input type="text" id="add-field-name" required placeholder="e.g. District, Survey URL, Age" oninput="autoSlug(this.value, 'add-field-slug')" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Variable Tag Slug *</label>
+                <input type="text" id="add-field-slug" required placeholder="e.g. district" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Field Type</label>
+                    <select id="add-field-type" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="TEXT">Text</option>
+                        <option value="NUMBER">Number</option>
+                        <option value="DATE">Date</option>
+                        <option value="BOOLEAN">Boolean (Yes/No)</option>
+                        <option value="EMAIL">Email</option>
+                        <option value="PHONE">Phone</option>
+                        <option value="URL">URL</option>
+                        <option value="SELECT">Dropdown Select</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Initial Status</label>
+                    <select id="add-field-active" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="true">Active (Visible)</option>
+                        <option value="false">Inactive (Hidden)</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Description / Default Value <span class="font-normal text-slate-400">(optional)</span></label>
+                <input type="text" id="add-field-desc" placeholder="e.g. https://odk.central/survey/xyz (applied to all contacts if not overridden)" class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs">
+                <p class="text-[10px] text-slate-400 mt-1">If this is a URL or common value, contacts in this group without an individual value will inherit this default.</p>
+            </div>
+            <div class="pt-4 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onclick="closeAddGroupFieldModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50 text-xs">Cancel</button>
+                <button type="submit" id="btn-save-group-field" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md text-xs">Create Field</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Edit Group Custom Field -->
+<div id="edit-field-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+            <h3 class="text-base font-bold text-slate-900">Edit Custom Field</h3>
+            <button onclick="closeEditGroupFieldModal()" class="text-slate-400 hover:text-slate-600 p-1"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <form onsubmit="submitEditGroupField(event)" class="space-y-4 pt-4 text-sm">
+            <input type="hidden" id="edit-field-id">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Field Name *</label>
+                <input type="text" id="edit-field-name" required class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Field Type</label>
+                <select id="edit-field-type" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="TEXT">Text</option>
+                    <option value="NUMBER">Number</option>
+                    <option value="DATE">Date</option>
+                    <option value="BOOLEAN">Boolean (Yes/No)</option>
+                    <option value="EMAIL">Email</option>
+                    <option value="PHONE">Phone</option>
+                    <option value="URL">URL</option>
+                    <option value="SELECT">Dropdown Select</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Description / Default Value</label>
+                <input type="text" id="edit-field-desc" placeholder="e.g. https://odk.central/survey/xyz (applied to all contacts if not overridden)" class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs">
+                <p class="text-[10px] text-slate-400 mt-1">If this is a URL or common value, contacts in this group will automatically inherit this value.</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="edit-field-active" class="rounded text-blue-600">
+                <label for="edit-field-active" class="text-xs font-bold text-slate-700 cursor-pointer">Active (visible in contacts table &amp; forms)</label>
+            </div>
+            <div class="pt-4 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onclick="closeEditGroupFieldModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50 text-xs">Cancel</button>
+                <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md text-xs">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Quick Create Group -->
+<div id="create-group-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+            <h3 class="text-base font-bold text-slate-900">Create Contact Group</h3>
+            <button onclick="closeCreateGroupModal()" class="text-slate-400 hover:text-slate-600 p-1"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <form onsubmit="submitQuickCreateGroup(event)" class="space-y-4 pt-4 text-sm">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Group Name *</label>
+                <input type="text" id="new-group-name" required placeholder="e.g. Pulse_V1 or Iris_v1" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Description</label>
+                <textarea id="new-group-desc" rows="2" placeholder="Optional notes about this respondent group" class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+            </div>
+            <div class="pt-4 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onclick="closeCreateGroupModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50 text-xs">Cancel</button>
+                <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md text-xs">Create Group</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{% verbatim %}
+<script>
+    let contactGroups = [];
+    let currentGroupId = null;
+    let currentFields = [];
+    let currentCFPage = 1;
+    let currentCFPageSize = 25;
+
+    function changeCFPage(page) {
+        currentCFPage = page;
+        renderFieldsTable();
+    }
+
+    function changeCFPageSize(newSize) {
+        currentCFPageSize = newSize;
+        currentCFPage = 1;
+        renderFieldsTable();
+    }
+
+    async function loadGroups() {
+        try {
+            const res = await fetch('/api/groups/?page_size=99999');
+            const data = await res.json();
+            contactGroups = data.results || (Array.isArray(data) ? data : []);
+            const select = document.getElementById('group-select');
+
+            if (!contactGroups || contactGroups.length === 0) {
+                select.innerHTML = '<option value="">No contact groups available</option>';
+                document.getElementById('table-group-title').textContent = 'No groups created yet';
+                document.getElementById('group-fields-tbody').innerHTML = `
+                    <tr>
+                        <td colspan="6" class="py-12 text-center text-slate-400">
+                            No contact groups found. Click "+ New Group" above or import contacts from ODK to get started.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            select.innerHTML = contactGroups.map(g => `
+                <option value="${g.id}" ${currentGroupId == g.id ? 'selected' : ''}>
+                    ${escapeHtml(g.name)} (${g.contact_count || 0} contacts)
+                </option>
+            `).join('');
+
+            // Check URL param ?group=X or pick first
+            const urlParams = new URLSearchParams(window.location.search);
+            const paramGroup = urlParams.get('group');
+            if (paramGroup && contactGroups.some(g => g.id == paramGroup)) {
+                currentGroupId = parseInt(paramGroup);
+            } else if (!currentGroupId || !contactGroups.some(g => g.id == currentGroupId)) {
+                currentGroupId = contactGroups[0].id;
+            }
+            select.value = currentGroupId;
+
+            await loadGroupFields(currentGroupId);
+        } catch (err) {
+            console.error('Failed to load contact groups:', err);
+        }
+    }
+
+    function onGroupChange(newGroupId) {
+        if (!newGroupId) return;
+        currentGroupId = parseInt(newGroupId);
+        currentCFPage = 1;
+        loadGroupFields(currentGroupId);
+    }
+
+    async function loadGroupFields(groupId) {
+        const group = contactGroups.find(g => g.id == groupId);
+        if (group) {
+            document.getElementById('selected-group-badge').textContent = `${group.contact_count || 0} contacts`;
+            document.getElementById('table-group-title').textContent = `Custom Fields in "${group.name}"`;
+            const srcBadge = document.getElementById('group-source-badge');
+            if (group.field_mappings && Object.keys(group.field_mappings).length > 0) {
+                srcBadge.classList.remove('hidden');
+                srcBadge.textContent = 'ODK Mapped';
+            } else {
+                srcBadge.classList.add('hidden');
+            }
+        }
+
+        const tbody = document.getElementById('group-fields-tbody');
+        tbody.innerHTML = '<tr><td colspan="6" class="py-12 text-center text-slate-400">Loading custom fields...</td></tr>';
+
+        try {
+            const res = await fetch(`/api/groups/${groupId}/fields/`);
+            if (!res.ok) throw new Error('Failed to load fields');
+            currentFields = await res.json();
+            renderFieldsTable();
+        } catch (err) {
+            console.error('Error loading fields:', err);
+            tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-rose-500">Could not load custom fields for this group.</td></tr>';
+        }
+    }
+
+    function renderFieldsTable() {
+        const tbody = document.getElementById('group-fields-tbody');
+        const total = currentFields.length;
+        const activeCount = currentFields.filter(f => f.is_active).length;
+        const inactiveCount = total - activeCount;
+
+        document.getElementById('stat-total-fields').textContent = total;
+        document.getElementById('stat-active-fields').textContent = activeCount;
+        document.getElementById('stat-inactive-fields').textContent = inactiveCount;
+
+        if (total === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="py-12 text-center text-slate-400">
+                        <div class="max-w-sm mx-auto space-y-2">
+                            <i data-lucide="layers" class="w-8 h-8 text-slate-300 mx-auto"></i>
+                            <div class="font-bold text-slate-600 text-sm">No custom fields for this group yet</div>
+                            <p class="text-xs text-slate-400">Import from ODK to automatically map attributes, or click "Add Custom Field" to define one manually.</p>
+                            <button onclick="openAddGroupFieldModal()" class="mt-2 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm">
+                                + Add First Field
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            renderPagination({ containerId: 'cf-pagination-container', totalCount: 0 });
+            lucide.createIcons();
+            return;
+        }
+
+        // Client-side paginate currentFields
+        const start = (currentCFPage - 1) * currentCFPageSize;
+        const end = start + currentCFPageSize;
+        const pageItems = currentFields.slice(start, end);
+        const totalPages = Math.ceil(total / currentCFPageSize) || 1;
+
+        tbody.innerHTML = pageItems.map(f => `
+            <tr class="hover:bg-slate-50/80 transition-colors text-xs">
+                <td class="py-4 px-6">
+                    <div class="font-bold text-slate-900 text-sm">${escapeHtml(f.name)}</div>
+                    ${f.is_required ? '<span class="text-[10px] text-rose-600 font-bold uppercase">Required</span>' : ''}
+                </td>
+                <td class="py-4 px-6">
+                    <code class="px-2 py-1 bg-violet-50 text-violet-700 font-mono font-bold text-xs rounded-lg border border-violet-100 select-all cursor-pointer" title="Click to copy tag">{{${escapeHtml(f.slug)}}}</code>
+                </td>
+                <td class="py-4 px-6">
+                    <span class="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md font-semibold text-[11px]">${escapeHtml(f.field_type)}</span>
+                </td>
+                <td class="py-4 px-6">
+                    <button onclick="toggleFieldActive(${f.id})" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all ${
+                        f.is_active 
+                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' 
+                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                    }" title="Click to toggle Active / Inactive status">
+                        <span class="w-2 h-2 rounded-full ${f.is_active ? 'bg-emerald-500' : 'bg-slate-400'}"></span>
+                        <span>${f.is_active ? 'Active' : 'Inactive'}</span>
+                    </button>
+                </td>
+                <td class="py-4 px-6 text-slate-500 max-w-xs truncate">
+                    ${f.description ? escapeHtml(f.description) : '<span class="text-slate-300">-</span>'}
+                </td>
+                <td class="py-4 px-6 text-right space-x-2">
+                    <button onclick="openEditGroupFieldModal(${f.id})" class="px-2.5 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 font-bold rounded-lg transition-colors">Edit</button>
+                    <button onclick="deleteGroupField(${f.id})" class="px-2.5 py-1 text-rose-600 hover:text-rose-800 hover:bg-rose-50 font-bold rounded-lg transition-colors">Delete</button>
+                </td>
+            </tr>
+        `).join('');
+
+        renderPagination({
+            containerId: 'cf-pagination-container',
+            totalCount: total,
+            currentPage: currentCFPage,
+            pageSize: currentCFPageSize,
+            totalPages: totalPages,
+            onPageChange: 'changeCFPage',
+            onPageSizeChange: 'changeCFPageSize'
+        });
+
+        lucide.createIcons();
+    }
+
+    async function toggleFieldActive(fieldId) {
+        if (!currentGroupId) return;
+        try {
+            const res = await fetch(`/api/groups/${currentGroupId}/fields/${fieldId}/toggle/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                showToast(data.message || 'Field status updated', 'success');
+                const f = currentFields.find(x => x.id === fieldId);
+                if (f) f.is_active = data.is_active;
+                renderFieldsTable();
+            } else {
+                showToast('Failed to toggle field status', 'error');
+            }
+        } catch (err) {
+            console.error(err);
+            showToast('Error updating field status', 'error');
+        }
+    }
+
+    function autoSlug(val, targetId) {
+        document.getElementById(targetId).value = val.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    }
+
+    function openAddGroupFieldModal() {
+        if (!currentGroupId) {
+            showToast('Please select a contact group first.', 'error');
+            return;
+        }
+        const group = contactGroups.find(g => g.id == currentGroupId);
+        document.getElementById('modal-group-name').textContent = group ? `"${group.name}"` : '';
+        document.getElementById('add-field-name').value = '';
+        document.getElementById('add-field-slug').value = '';
+        document.getElementById('add-field-desc').value = '';
+        document.getElementById('add-field-type').value = 'TEXT';
+        document.getElementById('add-field-active').value = 'true';
+        document.getElementById('add-field-modal').classList.remove('hidden');
+    }
+
+    function closeAddGroupFieldModal() {
+        document.getElementById('add-field-modal').classList.add('hidden');
+    }
+
+    async function submitAddGroupField(e) {
+        e.preventDefault();
+        if (!currentGroupId) return;
+        const payload = {
+            name: document.getElementById('add-field-name').value.trim(),
+            slug: document.getElementById('add-field-slug').value.trim(),
+            field_type: document.getElementById('add-field-type').value,
+            is_active: document.getElementById('add-field-active').value === 'true',
+            description: document.getElementById('add-field-desc').value.trim(),
+        };
+
+        const res = await fetch(`/api/groups/${currentGroupId}/fields/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            showToast('Custom field created successfully', 'success');
+            closeAddGroupFieldModal();
+            await loadGroupFields(currentGroupId);
+        } else {
+            const err = await res.json();
+            alert('Error: ' + JSON.stringify(err));
+        }
+    }
+
+    function openEditGroupFieldModal(fieldId) {
+        const field = currentFields.find(f => f.id === fieldId);
+        if (!field) return;
+        document.getElementById('edit-field-id').value = field.id;
+        document.getElementById('edit-field-name').value = field.name;
+        document.getElementById('edit-field-type').value = field.field_type;
+        document.getElementById('edit-field-desc').value = field.description || '';
+        document.getElementById('edit-field-active').checked = field.is_active;
+        document.getElementById('edit-field-modal').classList.remove('hidden');
+    }
+
+    function closeEditGroupFieldModal() {
+        document.getElementById('edit-field-modal').classList.add('hidden');
+    }
+
+    async function submitEditGroupField(e) {
+        e.preventDefault();
+        if (!currentGroupId) return;
+        const fieldId = document.getElementById('edit-field-id').value;
+        const payload = {
+            name: document.getElementById('edit-field-name').value.trim(),
+            field_type: document.getElementById('edit-field-type').value,
+            description: document.getElementById('edit-field-desc').value.trim(),
+            is_active: document.getElementById('edit-field-active').checked,
+        };
+
+        const res = await fetch(`/api/groups/${currentGroupId}/fields/${fieldId}/`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            showToast('Field updated', 'success');
+            closeEditGroupFieldModal();
+            await loadGroupFields(currentGroupId);
+        } else {
+            const err = await res.json();
+            alert('Error: ' + JSON.stringify(err));
+        }
+    }
+
+    async function deleteGroupField(fieldId) {
+        if (!confirm('Are you sure you want to delete this custom field? All values associated with it across contacts will also be removed.')) return;
+        const res = await fetch(`/api/groups/${currentGroupId}/fields/${fieldId}/`, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': getCsrfToken() }
+        });
+        if (res.ok) {
+            showToast('Field deleted', 'success');
+            await loadGroupFields(currentGroupId);
+        } else {
+            showToast('Failed to delete field', 'error');
+        }
+    }
+
+    function openCreateGroupModal() {
+        document.getElementById('new-group-name').value = '';
+        document.getElementById('new-group-desc').value = '';
+        document.getElementById('create-group-modal').classList.remove('hidden');
+    }
+
+    function closeCreateGroupModal() {
+        document.getElementById('create-group-modal').classList.add('hidden');
+    }
+
+    async function submitQuickCreateGroup(e) {
+        e.preventDefault();
+        const name = document.getElementById('new-group-name').value.trim();
+        const desc = document.getElementById('new-group-desc').value.trim();
+        if (!name) return;
+
+        const res = await fetch('/api/groups/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify({ name: name, description: desc })
+        });
+
+        if (res.ok) {
+            const newGroup = await res.json();
+            showToast(`Group "${newGroup.name}" created`, 'success');
+            closeCreateGroupModal();
+            currentGroupId = newGroup.id;
+            await loadGroups();
+        } else {
+            const err = await res.json();
+            alert('Error: ' + JSON.stringify(err));
+        }
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    loadGroups();
+</script>
+{% endverbatim %}
+{% endblock %}
