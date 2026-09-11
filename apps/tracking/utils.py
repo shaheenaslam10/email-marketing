@@ -37,6 +37,35 @@ def validate_destination_url(url: str) -> bool:
         return False
 
 
+def generate_unique_tracking_token(model, length: int = 8, max_attempts: int = 25) -> str:
+    """
+    Generates a cryptographically secure token that is unique for the
+    given model's ``tracking_token`` field. Raises RuntimeError if a
+    unique token cannot be found (practically impossible: 62^8 combos).
+    """
+    for _ in range(max_attempts):
+        token = generate_secure_token(length)
+        if not model.objects.filter(tracking_token=token).exists():
+            return token
+    raise RuntimeError(f"Could not generate a unique tracking token for {model.__name__}")
+
+
+def build_campaign_short_url(token: str, request=None) -> str:
+    """Builds the public branded URL for a campaign tracking link token."""
+    return f"{get_shortener_base_url(request)}/c/{token}"
+
+
+def append_query_params(destination_url: str, query_string: str) -> str:
+    """
+    Passes inbound query parameters (e.g. utm_* tags on the short URL)
+    through to the destination URL so downstream analytics keep working.
+    """
+    if not query_string:
+        return destination_url
+    separator = '&' if '?' in destination_url else '?'
+    return f"{destination_url}{separator}{query_string}"
+
+
 def get_shortener_base_url(request=None) -> str:
     """
     Returns the branded short URL base domain.

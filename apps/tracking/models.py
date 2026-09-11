@@ -152,3 +152,95 @@ class LinkClickEvent(models.Model):
 
     def __str__(self):
         return f"Click [{self.click_type}] on {self.recipient_link.tracking_token} at {self.clicked_at}"
+
+
+class CampaignTrackingLink(models.Model):
+    """
+    Campaign-level shareable tracking link for external distribution
+    (social media, ads, partner sites, QR codes, direct copy/paste).
+
+    Unlike RecipientLink (one unique URL per contact, generated at email
+    dispatch), this is a single stable URL per link that the campaign
+    owner generates in the editor and copies anywhere. Visits are
+    anonymous (no contact association) and counted in aggregate.
+    """
+    campaign = models.ForeignKey(
+        Campaign, on_delete=models.CASCADE, related_name='tracking_links', db_index=True
+    )
+    name = models.CharField(
+        max_length=255, blank=True, default='',
+        help_text="Human readable label (e.g. Facebook Ad, Website Banner)"
+    )
+    tracking_token = models.CharField(max_length=16, unique=True, db_index=True)
+    short_url = models.CharField(max_length=500)
+    # Optional per-link override. When blank, falls back to
+    # Campaign.destination_url at redirect time.
+    destination_url = models.TextField(
+        blank=True, default='',
+        help_text="Destination URL (http:// or https://). Blank = use campaign default."
+    )
+    is_active = models.BooleanField(default=True, db_index=True)
+    click_count = models.PositiveIntegerField(default=0)
+    human_click_count = models.PositiveIntegerField(default=0)
+    bot_click_count = models.PositiveIntegerField(default=0)
+    first_clicked_at = models.DateTimeField(null=True, blank=True)
+    last_clicked_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'campaign_tracking_links'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['campaign', 'is_active']),
+        ]
+
+    def __str__(self):
+        label = self.name or self.tracking_token
+        return f"CampaignTrackingLink {self.tracking_token} ({label}) for campaign #{self.campaign_id}"
+
+    def resolve_destination(self) -> str:
+        """Per-link destination wins; otherwise the campaign default."""
+        own = (self.destination_url or '').strip()
+        if own:
+            return own
+        return (self.campaign.destination_url or '').strip()
+
+
+class CampaignLinkClickEvent(models.Model):
+    """
+    Granular anonymous click record for every CampaignTrackingLink visit.
+    Mirrors LinkClickEvent but without a contact association.
+    """
+    class ClickType(models.TextChoices):
+        HUMAN = 'HUMAN', 'Human'
+        SUSPECTED_BOT = 'SUSPECTED_BOT', 'Suspected Bot'
+        UNKNOWN = 'UNKNOWN', 'Unknown'
+
+    link = models.ForeignKey(
+        CampaignTrackingLink, on_delete=models.CASCADE, related_name='click_events'
+    )
+    campaign = models.ForeignKey(
+        Campaign, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='tracking_link_click_events'
+    )
+    clicked_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True)
+    browser = models.CharField(max_length=100, blank=True)
+    operating_system = models.CharField(max_length=100, blank=True)
+    device_type = models.CharField(max_length=50, blank=True)
+    referrer = models.TextField(null=True, blank=True)
+    click_type = models.CharField(max_length=30, choices=ClickType.choices, default=ClickType.HUMAN, db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        db_table = 'campaign_link_click_events'
+        ordering = ['-clicked_at']
+        indexes = [
+            models.Index(fields=['campaign', 'clicked_at']),
+            models.Index(fields=['click_type', 'clicked_at']),
+        ]
+
+    def __str__(self):
+        return f"Click [{self.click_type}] on campaign link {self.link.tracking_token} at {self.clicked_at}"
