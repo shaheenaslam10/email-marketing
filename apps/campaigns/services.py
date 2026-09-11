@@ -1,0 +1,252 @@
+import re
+import urllib.parse
+from typing import Dict, Any, Tuple, List
+from django.conf import settings
+from apps.contacts.models import Contact
+
+
+def render_content_variables(
+    template_str: str,
+    contact: Contact,
+    extra_context: Dict[str, Any] = None
+) -> str:
+    """
+    Interpolates personalization variables in subject, html_content, and text_content.
+    Supports standard contact fields, encrypted login password, and custom fields.
+    (Section 14, 34, 35)
+    """
+    if not template_str:
+        return ""
+
+    context = {
+        'first_name': contact.first_name or (contact.name.split(' ')[0] if contact.name else ''),
+        'last_name': contact.last_name or '',
+        'name': contact.name or '',
+        'email': contact.email or '',
+        'phone': contact.phone_number or '',
+        'phone_number': contact.phone_number or '',
+        'login': contact.phone_number or contact.email or '',
+        'job_id': contact.job_id or '',
+        'status': contact.status or '',
+        # Decrypt password in memory only for interpolation
+        'login_password': contact.login_password or '',
+        'password': contact.login_password or '',
+    }
+
+    # Fetch global custom field values
+    for cv in contact.custom_values.select_related('field').all():
+        context[cv.field.slug.lower()] = cv.value or ''
+
+    # Fetch group-specific custom field values (e.g. url, label, submission_uuid, used_at)
+    if hasattr(contact, 'group_custom_values'):
+        for gv in contact.group_custom_values.select_related('field').all():
+            slug = gv.field.slug.lower()
+            val = (gv.value or '').strip()
+            # If contact value is empty, fallback to field description if it is a URL or default
+            if not val and gv.field.description:
+                desc = gv.field.description.strip()
+                if desc.startswith(('http://', 'https://')) or gv.field.field_type == 'URL':
+                    val = desc
+            if val:
+                context[slug] = val
+                if slug in ('url', 'survey_url') or gv.field.field_type == 'URL':
+                    context['url'] = val
+                    context['survey_url'] = val
+            elif slug not in context:
+                context[slug] = ''
+
+    # Fallback to group custom field definitions on any group the contact belongs to
+    for grp in contact.groups.prefetch_related('custom_fields').all():
+        for field in grp.custom_fields.filter(is_active=True):
+            f_slug = field.slug.lower()
+            if not context.get(f_slug):
+                desc = (field.description or '').strip()
+                if desc.startswith(('http://', 'https://')) or field.field_type == 'URL':
+                    context[f_slug] = desc
+                    if f_slug in ('url', 'survey_url') or field.field_type == 'URL':
+                        context['url'] = desc
+                        context['survey_url'] = desc
+
+    # Check JSON custom_fields dictionary if stored directly on contact
+    if hasattr(contact, 'custom_fields') and isinstance(contact.custom_fields, dict):
+        for k, v in contact.custom_fields.items():
+            if v:
+                context[k.lower()] = str(v)
+
+    # Fallback cross-mapping for url & survey_url
+    if not context.get('url') and context.get('survey_url'):
+        context['url'] = context['survey_url']
+    if not context.get('survey_url') and context.get('url'):
+        context['survey_url'] = context['url']
+
+    if extra_context:
+        context.update(extra_context)
+
+    # Perform case-insensitive regex substitution for {{variable}} or {{ variable }}
+    def replace_var(match):
+        var_name = match.group(1).strip().lower()
+        return str(context.get(var_name, ""))
+
+    rendered = re.sub(r'\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}', replace_var, template_str)
+    return rendered
+
+
+def wrap_tracking(
+    html_content: str,
+    token_str: str,
+    track_opens: bool = True,
+    track_clicks: bool = True,
+    campaign=None,
+    contact=None
+) -> str:
+    """
+    Injects open tracking pixel and rewrites links for recipient-level short URL click tracking.
+    Generates unique branded tracking links per Campaign + Contact + URL.
+    (Requirements 1, 2, 3, 7, 10, 15)
+    """
+    base_url = getattr(settings, 'BASE_TRACKING_URL', 'http://localhost:8000').rstrip('/')
+
+    from apps.tracking.utils import get_shortener_base_url, generate_secure_token, validate_destination_url
+    shortener_base = get_shortener_base_url().rstrip('/')
+
+    # Rewrite unsubscribe tag
+    unsub_url = f"{base_url}/t/unsubscribe/{token_str}/"
+    html_content = html_content.replace('{{unsubscribe_url}}', unsub_url)
+
+    # Click tracking
+    if track_clicks:
+        from apps.tracking.models import ShortenedLink, RecipientLink
+
+        def replace_anchor(match):
+            tag_attrs = match.group(1)
+            inner_html = match.group(2)
+
+            # Check for explicit data-track="false"
+            if re.search(r'data-track=["\']false["\']', tag_attrs, re.IGNORECASE):
+                return match.group(0)
+
+            # Extract href
+            href_m = re.search(r'href=["\']([^"\']+)["\']', tag_attrs, re.IGNORECASE)
+            if not href_m:
+                return match.group(0)
+            raw_href = href_m.group(1).strip()
+
+            # Ignore internal or non-http links
+            if raw_href.startswith(('mailto:', 'tel:', '#', 'javascript:')) or '/t/unsubscribe/' in raw_href:
+                return match.group(0)
+
+            # Check for data-original-url
+            orig_m = re.search(r'data-original-url=["\']([^"\']+)["\']', tag_attrs, re.IGNORECASE)
+            target_url = orig_m.group(1).strip() if orig_m else raw_href
+
+            # Check if target is still a placeholder like {unique_link}
+            if '{unique_link}' in target_url or '{unique-link}' in target_url:
+                if orig_m:
+                    target_url = orig_m.group(1).strip()
+                else:
+                    return match.group(0)
+
+            # Validate target URL
+            if not validate_destination_url(target_url):
+                return match.group(0)
+
+            # Extract link name/label
+            name_m = re.search(r'data-link-name=["\']([^"\']+)["\']', tag_attrs, re.IGNORECASE)
+            if name_m:
+                link_name = name_m.group(1).strip()
+            else:
+                plain_txt = re.sub(r'<[^>]+>', '', inner_html).strip()
+                link_name = plain_txt[:60] if plain_txt and not plain_txt.startswith(('http://', 'https://', '{unique')) else ''
+
+            final_url = None
+            if campaign and contact:
+                try:
+                    shortened_link, _ = ShortenedLink.objects.get_or_create(
+                        campaign=campaign,
+                        original_url=target_url,
+                        defaults={
+                            'link_name': link_name or 'Tracked Link',
+                            'tracking_enabled': True
+                        }
+                    )
+                    if link_name and (not shortened_link.link_name or shortened_link.link_name == 'Tracked Link'):
+                        shortened_link.link_name = link_name
+                        shortened_link.save(update_fields=['link_name'])
+
+                    recipient_link = RecipientLink.objects.filter(
+                        shortened_link=shortened_link,
+                        campaign=campaign,
+                        contact=contact
+                    ).first()
+
+                    if not recipient_link:
+                        # Generate unique token
+                        for _ in range(10):
+                            new_token = generate_secure_token(7)
+                            if not RecipientLink.objects.filter(tracking_token=new_token).exists():
+                                break
+                        rec_short_url = f"{shortener_base}/{new_token}"
+                        recipient_link = RecipientLink.objects.create(
+                            shortened_link=shortened_link,
+                            campaign=campaign,
+                            contact=contact,
+                            tracking_token=new_token,
+                            short_url=rec_short_url
+                        )
+
+                    final_url = recipient_link.short_url
+                except Exception as e:
+                    # Fallback to legacy tracking if database error
+                    encoded_url = urllib.parse.quote(target_url, safe='')
+                    final_url = f"{base_url}/t/click/{token_str}/?url={encoded_url}"
+            else:
+                # Standalone preview or no contact
+                encoded_url = urllib.parse.quote(target_url, safe='')
+                final_url = f"{base_url}/t/click/{token_str}/?url={encoded_url}"
+
+            # Replace href attribute
+            new_tag_attrs = re.sub(r'href=["\'][^"\']+["\']', f'href="{final_url}"', tag_attrs, count=1, flags=re.IGNORECASE)
+            new_inner = inner_html.replace('{unique_link}', final_url).replace('{unique-link}', final_url)
+            return f'<a {new_tag_attrs}>{new_inner}</a>'
+
+        html_content = re.sub(r'<a\s+([^>]+)>([\s\S]*?)</a>', replace_anchor, html_content, flags=re.IGNORECASE)
+
+    # Open tracking pixel (Section 75, Requirement 15)
+    if track_opens:
+        pixel_url = f"{base_url}/t/open/{token_str}/"
+        pixel_tag = f'<img src="{pixel_url}" width="1" height="1" border="0" alt="" style="display:none !important;" />'
+        if '</body>' in html_content:
+            html_content = html_content.replace('</body>', f'{pixel_tag}</body>')
+        else:
+            html_content += pixel_tag
+
+    return html_content
+
+
+def validate_campaign_variables(html_content: str, subject: str, contacts: List[Contact]) -> Dict[str, Any]:
+    """
+    Validates variable presence across selected contacts (Section 36).
+    Checks missing login password, missing JobID, missing first name.
+    """
+    combined_text = f"{subject} {html_content}"
+    vars_found = set(re.findall(r'\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}', combined_text))
+
+    missing_password = 0
+    missing_job_id = 0
+    missing_first_name = 0
+
+    for c in contacts:
+        if 'login_password' in vars_found and not c.login_password:
+            missing_password += 1
+        if 'job_id' in vars_found and not c.job_id:
+            missing_job_id += 1
+        if 'first_name' in vars_found and not c.first_name and not c.name:
+            missing_first_name += 1
+
+    return {
+        'total_contacts': len(contacts),
+        'variables_used': list(vars_found),
+        'missing_password_count': missing_password,
+        'missing_job_id_count': missing_job_id,
+        'missing_first_name_count': missing_first_name,
+    }

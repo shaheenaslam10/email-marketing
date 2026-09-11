@@ -1,0 +1,990 @@
+<!-- Modal: Insert Image & GIF -->
+<div id="image-gif-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 space-y-5 animate-in fade-in zoom-in-95 duration-200">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center">
+                    <i data-lucide="image" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-slate-900">Insert Image or Animated GIF</h3>
+                    <p class="text-xs text-slate-500">Upload from computer, paste a web/GIF URL, or choose a survey GIF</p>
+                </div>
+            </div>
+            <button type="button" onclick="closeImageGifModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex border-b border-slate-200 text-xs font-bold text-slate-500 gap-2">
+            <button type="button" onclick="switchImgTab('upload')" id="img-tab-btn-upload" class="py-2.5 px-3 text-purple-600 border-b-2 border-purple-600 font-extrabold flex items-center gap-1.5">
+                <i data-lucide="upload" class="w-3.5 h-3.5"></i> Upload File
+            </button>
+            <button type="button" onclick="switchImgTab('url')" id="img-tab-btn-url" class="py-2.5 px-3 hover:text-slate-700 flex items-center gap-1.5">
+                <i data-lucide="link" class="w-3.5 h-3.5"></i> Web / GIF URL
+            </button>
+            <button type="button" onclick="switchImgTab('library')" id="img-tab-btn-library" class="py-2.5 px-3 hover:text-slate-700 flex items-center gap-1.5">
+                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Quick GIFs
+            </button>
+        </div>
+
+        <!-- Tab 1: Upload -->
+        <div id="img-tab-upload" class="space-y-4">
+            <div id="img-dropzone" onclick="document.getElementById('img-file-input').click()" class="border-2 border-dashed border-purple-200 hover:border-purple-400 bg-purple-50/30 hover:bg-purple-50/60 rounded-2xl p-6 text-center cursor-pointer transition-all">
+                <input type="file" id="img-file-input" accept="image/png, image/jpeg, image/jpg, image/gif, image/webp, image/svg+xml" class="hidden" onchange="handleImageFileSelect(event)">
+                <div class="w-12 h-12 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center mx-auto mb-3">
+                    <i data-lucide="cloud-upload" class="w-6 h-6"></i>
+                </div>
+                <div class="text-xs font-bold text-slate-700">Click to upload or drag & drop</div>
+                <div class="text-[11px] text-slate-400 mt-0.5">Supports Animated GIF, PNG, JPG, WebP, SVG (up to 10MB)</div>
+            </div>
+            
+            <div id="img-upload-preview-wrap" class="hidden border border-slate-200 rounded-2xl p-3 bg-slate-50 flex items-center justify-center max-h-48 overflow-hidden">
+                <img id="img-upload-preview" src="" alt="Preview" class="max-h-40 rounded-xl object-contain shadow-sm">
+            </div>
+        </div>
+
+        <!-- Tab 2: URL -->
+        <div id="img-tab-url" class="hidden space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Image or GIF URL</label>
+                <div class="relative">
+                    <input type="url" id="img-url-input" placeholder="https://media.giphy.com/media/.../giphy.gif or https://example.com/photo.png" oninput="previewUrlImage(this.value)" class="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium">
+                </div>
+                <span class="text-[10px] text-slate-400 mt-1 block">Paste any online animated GIF, Giphy link, Tenor link, or hosted image URL</span>
+            </div>
+
+            <div id="img-url-preview-wrap" class="hidden border border-slate-200 rounded-2xl p-3 bg-slate-50 flex items-center justify-center max-h-48 overflow-hidden">
+                <img id="img-url-preview" src="" alt="URL Preview" class="max-h-40 rounded-xl object-contain shadow-sm" onerror="handleUrlImageError()">
+            </div>
+        </div>
+
+        <!-- Tab 3: Quick GIFs Library -->
+        <div id="img-tab-library" class="hidden space-y-3">
+            <span class="text-[11px] font-bold text-slate-500 uppercase">Click any animated GIF to instantly select it:</span>
+            <div class="grid grid-cols-3 gap-2.5 max-h-56 overflow-y-auto p-1">
+                <div onclick="selectQuickGif('https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif')" class="group border border-slate-200 hover:border-purple-500 rounded-xl overflow-hidden cursor-pointer bg-slate-100 hover:shadow-md transition-all">
+                    <img src="https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif" alt="Survey Checklist" class="w-full h-24 object-cover">
+                    <div class="p-1.5 text-[10px] font-bold text-slate-700 text-center truncate bg-white">Survey Checklist</div>
+                </div>
+                <div onclick="selectQuickGif('https://media.giphy.com/media/3o7TKSjRrfIPjeiVyM/giphy.gif')" class="group border border-slate-200 hover:border-purple-500 rounded-xl overflow-hidden cursor-pointer bg-slate-100 hover:shadow-md transition-all">
+                    <img src="https://media.giphy.com/media/3o7TKSjRrfIPjeiVyM/giphy.gif" alt="Clock Reminder" class="w-full h-24 object-cover">
+                    <div class="p-1.5 text-[10px] font-bold text-slate-700 text-center truncate bg-white">Clock Reminder</div>
+                </div>
+                <div onclick="selectQuickGif('https://media.giphy.com/media/26gsjCZpPolPr3sBy/giphy.gif')" class="group border border-slate-200 hover:border-purple-500 rounded-xl overflow-hidden cursor-pointer bg-slate-100 hover:shadow-md transition-all">
+                    <img src="https://media.giphy.com/media/26gsjCZpPolPr3sBy/giphy.gif" alt="Thank You" class="w-full h-24 object-cover">
+                    <div class="p-1.5 text-[10px] font-bold text-slate-700 text-center truncate bg-white">Thank You</div>
+                </div>
+                <div onclick="selectQuickGif('https://media.giphy.com/media/d2Z4NRCUxsxZBvag/giphy.gif')" class="group border border-slate-200 hover:border-purple-500 rounded-xl overflow-hidden cursor-pointer bg-slate-100 hover:shadow-md transition-all">
+                    <img src="https://media.giphy.com/media/d2Z4NRCUxsxZBvag/giphy.gif" alt="Feedback Idea" class="w-full h-24 object-cover">
+                    <div class="p-1.5 text-[10px] font-bold text-slate-700 text-center truncate bg-white">Feedback Idea</div>
+                </div>
+                <div onclick="selectQuickGif('https://media.giphy.com/media/3o7abKhOpu0NwenH3O/giphy.gif')" class="group border border-slate-200 hover:border-purple-500 rounded-xl overflow-hidden cursor-pointer bg-slate-100 hover:shadow-md transition-all">
+                    <img src="https://media.giphy.com/media/3o7abKhOpu0NwenH3O/giphy.gif" alt="Welcome" class="w-full h-24 object-cover">
+                    <div class="p-1.5 text-[10px] font-bold text-slate-700 text-center truncate bg-white">Welcome</div>
+                </div>
+                <div onclick="selectQuickGif('https://media.giphy.com/media/xT9IgzoKnwFNmISR8I/giphy.gif')" class="group border border-slate-200 hover:border-purple-500 rounded-xl overflow-hidden cursor-pointer bg-slate-100 hover:shadow-md transition-all">
+                    <img src="https://media.giphy.com/media/xT9IgzoKnwFNmISR8I/giphy.gif" alt="Target Goal" class="w-full h-24 object-cover">
+                    <div class="p-1.5 text-[10px] font-bold text-slate-700 text-center truncate bg-white">Target Goal</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Format Options -->
+        <div class="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100 text-xs">
+            <div>
+                <label class="block font-bold text-slate-700 mb-1">Display Width</label>
+                <select id="img-width-select" class="w-full px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs text-slate-700 font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white">
+                    <option value="100%">Full Width (100%)</option>
+                    <option value="480px" selected>Large (480px)</option>
+                    <option value="320px">Medium (320px)</option>
+                    <option value="180px">Small (180px)</option>
+                    <option value="auto">Original Dimensions</option>
+                </select>
+            </div>
+            <div>
+                <label class="block font-bold text-slate-700 mb-1">Alignment</label>
+                <select id="img-align-select" class="w-full px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs text-slate-700 font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white">
+                    <option value="center" selected>Center</option>
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="pt-3 flex justify-end gap-2.5 border-t border-slate-100">
+            <button type="button" onclick="closeImageGifModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50 text-xs">Cancel</button>
+            <button type="button" id="img-insert-btn" onclick="insertSelectedImage()" class="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-md text-xs flex items-center gap-1.5 transition-all">
+                <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                <span>Insert Into Email</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ─── Parchment Attributors for MS Word Line Spacing & Paragraph Margins ───
+    function registerQuillLineSpacingParchment() {
+        if (typeof Quill === 'undefined' || window._quillLineSpacingRegistered) return;
+        try {
+            const Parchment = Quill.import('parchment');
+            
+            // 1. Line Height block style attributor (line-height)
+            const LineHeightStyle = new Parchment.Attributor.Style('lineheight', 'line-height', {
+                scope: Parchment.Scope.BLOCK
+            });
+            Quill.register({ 'formats/lineheight': LineHeightStyle }, true);
+            Quill.register(LineHeightStyle, true);
+
+            // 2. Paragraph Space Before (margin-top)
+            const SpaceBeforeStyle = new Parchment.Attributor.Style('spacebefore', 'margin-top', {
+                scope: Parchment.Scope.BLOCK
+            });
+            Quill.register({ 'formats/spacebefore': SpaceBeforeStyle }, true);
+            Quill.register(SpaceBeforeStyle, true);
+
+            // 3. Paragraph Space After (margin-bottom)
+            const SpaceAfterStyle = new Parchment.Attributor.Style('spaceafter', 'margin-bottom', {
+                scope: Parchment.Scope.BLOCK
+            });
+            Quill.register({ 'formats/spaceafter': SpaceAfterStyle }, true);
+            Quill.register(SpaceAfterStyle, true);
+
+            window._quillLineSpacingRegistered = true;
+        } catch (e) {
+            console.warn('Could not register Quill line-spacing attributors:', e);
+        }
+    }
+    registerQuillLineSpacingParchment();
+
+    let currentTargetQuill = null;
+    let currentImgSource = null;
+
+    function openImageGifModal(targetType) {
+        if (targetType === 'modal' && typeof quillModal !== 'undefined') {
+            currentTargetQuill = quillModal;
+        } else if (typeof quill !== 'undefined') {
+            currentTargetQuill = quill;
+        }
+        currentImgSource = null;
+        const fileInput = document.getElementById('img-file-input');
+        if (fileInput) fileInput.value = '';
+        const urlInput = document.getElementById('img-url-input');
+        if (urlInput) urlInput.value = '';
+        const uploadWrap = document.getElementById('img-upload-preview-wrap');
+        if (uploadWrap) uploadWrap.classList.add('hidden');
+        const urlWrap = document.getElementById('img-url-preview-wrap');
+        if (urlWrap) urlWrap.classList.add('hidden');
+        switchImgTab('upload');
+        document.getElementById('image-gif-modal').classList.remove('hidden');
+        lucide.createIcons();
+    }
+
+    function closeImageGifModal() {
+        document.getElementById('image-gif-modal').classList.add('hidden');
+        currentImgSource = null;
+    }
+
+    function switchImgTab(tab) {
+        ['upload', 'url', 'library'].forEach(t => {
+            const pane = document.getElementById(`img-tab-${t}`);
+            const btn = document.getElementById(`img-tab-btn-${t}`);
+            if (pane) pane.classList.toggle('hidden', t !== tab);
+            if (btn) {
+                if (t === tab) {
+                    btn.className = 'py-2.5 px-3 text-purple-600 border-b-2 border-purple-600 font-extrabold flex items-center gap-1.5';
+                } else {
+                    btn.className = 'py-2.5 px-3 hover:text-slate-700 text-slate-500 font-bold flex items-center gap-1.5';
+                }
+            }
+        });
+    }
+
+    function handleImageFileSelect(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (file.size > 10 * 1024 * 1024) {
+            alert('File is larger than 10MB. Please choose a smaller image or GIF.');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            currentImgSource = evt.target.result;
+            const prev = document.getElementById('img-upload-preview');
+            prev.src = currentImgSource;
+            document.getElementById('img-upload-preview-wrap').classList.remove('hidden');
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function previewUrlImage(url) {
+        url = (url || '').trim();
+        if (!url) {
+            document.getElementById('img-url-preview-wrap').classList.add('hidden');
+            currentImgSource = null;
+            return;
+        }
+        currentImgSource = url;
+        const prev = document.getElementById('img-url-preview');
+        prev.src = url;
+        document.getElementById('img-url-preview-wrap').classList.remove('hidden');
+    }
+
+    function handleUrlImageError() {
+        document.getElementById('img-url-preview-wrap').classList.add('hidden');
+        currentImgSource = null;
+    }
+
+    function selectQuickGif(gifUrl) {
+        currentImgSource = gifUrl;
+        insertSelectedImage();
+    }
+
+    function insertSelectedImage() {
+        if (!currentImgSource) {
+            alert('Please select an image file, enter an image URL, or choose a GIF first.');
+            return;
+        }
+        if (!currentTargetQuill) {
+            currentTargetQuill = (typeof quill !== 'undefined') ? quill : (typeof quillModal !== 'undefined' ? quillModal : null);
+        }
+        if (!currentTargetQuill) return;
+
+        const width = document.getElementById('img-width-select').value;
+        const align = document.getElementById('img-align-select').value;
+
+        const range = currentTargetQuill.getSelection(true) || { index: currentTargetQuill.getLength(), length: 0 };
+
+        let alignStyle = 'text-align: center;';
+        let marginStyle = 'margin: 12px auto;';
+        if (align === 'left') {
+            alignStyle = 'text-align: left;';
+            marginStyle = 'margin: 12px 0;';
+        } else if (align === 'right') {
+            alignStyle = 'text-align: right;';
+            marginStyle = 'margin: 12px 0 12px auto;';
+        }
+
+        const widthAttr = width === 'auto' ? '' : `width: ${width}; max-width: 100%;`;
+        const imgHtml = `<p style="${alignStyle}"><img src="${currentImgSource}" alt="Email Graphic" style="${widthAttr} ${marginStyle} display: inline-block; border-radius: 8px; height: auto;" /></p><p><br></p>`;
+
+        currentTargetQuill.clipboard.dangerouslyPasteHTML(range.index, imgHtml, 'user');
+        currentTargetQuill.setSelection(range.index + 2);
+        currentTargetQuill.update();
+
+        closeImageGifModal();
+        if (typeof showToast === 'function') {
+            showToast('Image / GIF inserted successfully!');
+        }
+    }
+
+    function cleanAndNormalizeWordHtml(html) {
+        if (!html) return '';
+
+        // Remove Office XML tags and comments
+        html = html.replace(/<!--[\s\S]*?-->/g, '');
+        html = html.replace(/<xml[\s\S]*?<\/xml>/gi, '');
+        html = html.replace(/<style[\s\S]*?<\/style>/gi, '');
+        html = html.replace(/<meta[\s\S]*?>/gi, '');
+        html = html.replace(/<link[\s\S]*?>/gi, '');
+        html = html.replace(/<title[\s\S]*?<\/title>/gi, '');
+        html = html.replace(/<o:p[\s\S]*?<\/o:p>/gi, '');
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        doc.querySelectorAll('*').forEach(el => {
+            const style = el.getAttribute('style') || '';
+            const align = el.getAttribute('align');
+
+            if (align && !style.includes('text-align')) {
+                el.style.textAlign = align;
+            }
+
+            const className = (el.className || '').toLowerCase();
+            if (className.includes('msoheading1') || className === 'heading 1') {
+                const h1 = doc.createElement('h1');
+                h1.innerHTML = el.innerHTML;
+                el.parentNode.replaceChild(h1, el);
+                return;
+            } else if (className.includes('msoheading2') || className === 'heading 2') {
+                const h2 = doc.createElement('h2');
+                h2.innerHTML = el.innerHTML;
+                el.parentNode.replaceChild(h2, el);
+                return;
+            } else if (className.includes('msoheading3') || className === 'heading 3') {
+                const h3 = doc.createElement('h3');
+                h3.innerHTML = el.innerHTML;
+                el.parentNode.replaceChild(h3, el);
+                return;
+            } else if (className.includes('msotitle')) {
+                const h1 = doc.createElement('h1');
+                h1.innerHTML = el.innerHTML;
+                el.parentNode.replaceChild(h1, el);
+                return;
+            }
+
+            // Bold: font-weight bold / 600 / 700 / 800 / 900 or bidi-font-weight
+            if (/font-weight\s*:\s*(bold|[6-9]00)/i.test(style) || /mso-bidi-font-weight\s*:\s*bold/i.test(style)) {
+                if (!['STRONG', 'B', 'H1', 'H2', 'H3'].includes(el.tagName)) {
+                    el.innerHTML = `<strong>${el.innerHTML}</strong>`;
+                    el.style.fontWeight = '';
+                }
+            }
+
+            // Italic: font-style: italic
+            if (/font-style\s*:\s*italic/i.test(style) || /mso-bidi-font-style\s*:\s*italic/i.test(style)) {
+                if (!['EM', 'I'].includes(el.tagName)) {
+                    el.innerHTML = `<em>${el.innerHTML}</em>`;
+                    el.style.fontStyle = '';
+                }
+            }
+
+            // Underline: text-decoration underline
+            if (/text-decoration\s*:[^;]*underline/i.test(style)) {
+                if (el.tagName !== 'U') {
+                    el.innerHTML = `<u>${el.innerHTML}</u>`;
+                    el.style.textDecoration = '';
+                }
+            }
+
+            // Line-through / Strike
+            if (/text-decoration\s*:[^;]*line-through/i.test(style)) {
+                if (el.tagName !== 'S' && el.tagName !== 'STRIKE') {
+                    el.innerHTML = `<s>${el.innerHTML}</s>`;
+                }
+            }
+
+            // Font color tag
+            if (el.tagName === 'FONT') {
+                const color = el.getAttribute('color');
+                if (color) el.style.color = color;
+            }
+
+            // Clean mso- properties from style but preserve valid line-height and paragraph margins
+            if (style.includes('mso-') || style.includes('line-height') || style.includes('margin:0in')) {
+                const cleanedStyles = style.split(';')
+                    .map(s => s.trim())
+                    .filter(s => {
+                        if (!s) return false;
+                        const lower = s.toLowerCase();
+                        if (lower.startsWith('mso-')) return false;
+                        if (lower.startsWith('margin') && lower.includes('0in')) return false;
+                        return true;
+                    })
+                    .map(s => {
+                        const lower = s.toLowerCase();
+                        if (lower.startsWith('line-height')) {
+                            // Normalize percentages to multipliers: 115% -> 1.15, 150% -> 1.5, 200% -> 2
+                            return s.replace(/line-height\s*:\s*([0-9.]+)%/i, (m, pct) => `line-height: ${(parseFloat(pct) / 100).toFixed(2).replace(/\.?0+$/, '')}`);
+                        }
+                        return s;
+                    })
+                    .join('; ');
+                el.setAttribute('style', cleanedStyles);
+            }
+        });
+
+        // Convert Word list paragraphs (MsoListParagraph) into proper <ul> and <ol>
+        const listParagraphs = Array.from(doc.querySelectorAll('p.MsoListParagraph, p[style*="mso-list"]'));
+        if (listParagraphs.length > 0) {
+            let currentUl = null;
+            let currentOl = null;
+
+            listParagraphs.forEach(p => {
+                const ignoreSpan = p.querySelector('span[style*="mso-list:Ignore"], span[style*="mso-list: Ignore"]');
+                let bulletText = '';
+                if (ignoreSpan) {
+                    bulletText = ignoreSpan.textContent.trim();
+                    ignoreSpan.remove();
+                }
+
+                const isOrdered = /^[0-9]+[\.\)]|^[a-zA-Z][\.\)]/.test(bulletText);
+                const li = doc.createElement('li');
+                li.innerHTML = p.innerHTML.trim();
+
+                if (isOrdered) {
+                    if (!currentOl || currentOl.parentNode !== p.parentNode) {
+                        currentOl = doc.createElement('ol');
+                        p.parentNode.insertBefore(currentOl, p);
+                    }
+                    currentOl.appendChild(li);
+                    currentUl = null;
+                } else {
+                    if (!currentUl || currentUl.parentNode !== p.parentNode) {
+                        currentUl = doc.createElement('ul');
+                        p.parentNode.insertBefore(currentUl, p);
+                    }
+                    currentUl.appendChild(li);
+                    currentOl = null;
+                }
+                p.remove();
+            });
+        }
+
+        return doc.body.innerHTML;
+    }
+
+    function setupQuillWordPaste(targetQuill) {
+        if (!targetQuill || !targetQuill.root) return;
+
+        targetQuill.root.addEventListener('paste', function(e) {
+            const clipboardData = e.clipboardData || window.clipboardData;
+            if (!clipboardData) return;
+
+            // 1. Direct Image / GIF file paste from clipboard
+            if (clipboardData.files && clipboardData.files.length > 0) {
+                for (let i = 0; i < clipboardData.files.length; i++) {
+                    const file = clipboardData.files[i];
+                    if (file.type.startsWith('image/')) {
+                        e.preventDefault();
+                        const reader = new FileReader();
+                        reader.onload = function(evt) {
+                            const range = targetQuill.getSelection(true) || { index: targetQuill.getLength(), length: 0 };
+                            const imgHtml = `<p style="text-align:center;"><img src="${evt.target.result}" style="max-width:100%; border-radius:8px; margin:10px auto;" /></p><p><br></p>`;
+                            targetQuill.clipboard.dangerouslyPasteHTML(range.index, imgHtml, 'user');
+                            targetQuill.setSelection(range.index + 2);
+                            targetQuill.update();
+                        };
+                        reader.readAsDataURL(file);
+                        return;
+                    }
+                }
+            }
+
+            // 2. Rich HTML content (Microsoft Word, Outlook, etc.)
+            const html = clipboardData.getData('text/html');
+            if (html && html.trim()) {
+                const isWord = /mso-|class="?mso|xmlns:w=|xmlns:o=/i.test(html);
+                const hasRichFormatting = isWord || html.includes('<p') || html.includes('<table') || html.includes('<h1') || html.includes('<h2') || html.includes('<h3') || html.includes('<strong') || html.includes('<b') || html.includes('<em') || html.includes('<i') || html.includes('<u') || html.includes('<ul') || html.includes('<ol');
+
+                if (hasRichFormatting) {
+                    const cleanedHtml = cleanAndNormalizeWordHtml(html);
+                    if (cleanedHtml && cleanedHtml.trim()) {
+                        e.preventDefault();
+                        const range = targetQuill.getSelection(true) || { index: targetQuill.getLength(), length: 0 };
+                        if (range.length > 0) {
+                            targetQuill.deleteText(range.index, range.length);
+                        }
+                        targetQuill.clipboard.dangerouslyPasteHTML(range.index, cleanedHtml, 'user');
+                        targetQuill.update();
+                    }
+                }
+            }
+        });
+
+        // Direct Drag-and-drop onto Quill
+        targetQuill.root.addEventListener('dragover', function(e) {
+            e.preventDefault();
+        });
+        targetQuill.root.addEventListener('drop', function(e) {
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                for (let i = 0; i < e.dataTransfer.files.length; i++) {
+                    const file = e.dataTransfer.files[i];
+                    if (file.type.startsWith('image/')) {
+                        e.preventDefault();
+                        const reader = new FileReader();
+                        reader.onload = function(evt) {
+                            const range = targetQuill.getSelection(true) || { index: targetQuill.getLength(), length: 0 };
+                            const imgHtml = `<p style="text-align:center;"><img src="${evt.target.result}" style="max-width:100%; border-radius:8px; margin:10px auto;" /></p><p><br></p>`;
+                            targetQuill.clipboard.dangerouslyPasteHTML(range.index, imgHtml, 'user');
+                            targetQuill.update();
+                        };
+                        reader.readAsDataURL(file);
+                        return;
+                    }
+                }
+            }
+        });
+
+        // Automatically activate mouse image resizing
+        enableQuillImageResize(targetQuill);
+        // Automatically activate MS Word Line Spacing dropdown
+        setupQuillLineSpacing(targetQuill);
+    }
+
+    // ─── Interactive Mouse Image Resizer for Quill ─────────────────────────────
+    function enableQuillImageResize(quillInstance) {
+        if (!quillInstance || !quillInstance.root) return;
+
+        const root = quillInstance.root;
+        const container = quillInstance.container;
+        if (!container) return;
+
+        container.style.position = 'relative';
+
+        let activeImg = null;
+        let isDragging = false;
+        let currentHandle = null;
+        let startX = 0, startY = 0, startWidth = 0, startHeight = 0;
+
+        // Overlay container
+        const overlay = document.createElement('div');
+        overlay.className = 'quill-img-resizer-overlay';
+        overlay.style.cssText = `
+            position: absolute;
+            display: none;
+            border: 2px dashed #3b82f6;
+            pointer-events: none;
+            z-index: 100;
+            box-sizing: border-box;
+        `;
+
+        // 4 Corner Drag Handles
+        const handlePositions = ['nw', 'ne', 'sw', 'se'];
+        handlePositions.forEach(pos => {
+            const h = document.createElement('div');
+            h.dataset.handle = pos;
+            h.style.cssText = `
+                position: absolute;
+                width: 12px;
+                height: 12px;
+                background: #2563eb;
+                border: 2px solid #ffffff;
+                border-radius: 50%;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+                pointer-events: auto;
+                cursor: ${pos}-resize;
+                z-index: 101;
+            `;
+            if (pos.includes('n')) h.style.top = '-6px';
+            if (pos.includes('s')) h.style.bottom = '-6px';
+            if (pos.includes('w')) h.style.left = '-6px';
+            if (pos.includes('e')) h.style.right = '-6px';
+
+            h.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                startResize(e, pos);
+            });
+
+            overlay.appendChild(h);
+        });
+
+        // Floating Quick Toolbar (Alignment, Presets, Delete)
+        const toolbar = document.createElement('div');
+        toolbar.style.cssText = `
+            position: absolute;
+            top: -42px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #0f172a;
+            color: #ffffff;
+            border-radius: 10px;
+            padding: 4px 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);
+            pointer-events: auto;
+            white-space: nowrap;
+            z-index: 102;
+        `;
+        toolbar.innerHTML = `
+            <button type="button" data-act="align-left" style="background:none;border:none;color:#cbd5e1;cursor:pointer;padding:3px 6px;border-radius:4px;" title="Align Left">Left</button>
+            <button type="button" data-act="align-center" style="background:none;border:none;color:#cbd5e1;cursor:pointer;padding:3px 6px;border-radius:4px;" title="Align Center">Center</button>
+            <button type="button" data-act="align-right" style="background:none;border:none;color:#cbd5e1;cursor:pointer;padding:3px 6px;border-radius:4px;" title="Align Right">Right</button>
+            <span style="color:#475569;">|</span>
+            <button type="button" data-act="w-25" style="background:none;border:none;color:#93c5fd;cursor:pointer;padding:3px 5px;border-radius:4px;">25%</button>
+            <button type="button" data-act="w-50" style="background:none;border:none;color:#93c5fd;cursor:pointer;padding:3px 5px;border-radius:4px;">50%</button>
+            <button type="button" data-act="w-75" style="background:none;border:none;color:#93c5fd;cursor:pointer;padding:3px 5px;border-radius:4px;">75%</button>
+            <button type="button" data-act="w-100" style="background:none;border:none;color:#93c5fd;cursor:pointer;padding:3px 5px;border-radius:4px;">100%</button>
+            <span style="color:#475569;">|</span>
+            <button type="button" data-act="del" style="background:none;border:none;color:#f87171;cursor:pointer;padding:3px 6px;border-radius:4px;" title="Remove Image">✕ Remove</button>
+        `;
+
+        toolbar.addEventListener('click', function(e) {
+            const btn = e.target.closest('button');
+            if (!btn || !activeImg) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            const act = btn.dataset.act;
+            if (act === 'align-left') {
+                activeImg.style.display = 'block';
+                activeImg.style.margin = '10px auto 10px 0';
+            } else if (act === 'align-center') {
+                activeImg.style.display = 'block';
+                activeImg.style.margin = '10px auto';
+            } else if (act === 'align-right') {
+                activeImg.style.display = 'block';
+                activeImg.style.margin = '10px 0 10px auto';
+            } else if (act === 'w-25') {
+                activeImg.style.width = '25%';
+                activeImg.style.height = 'auto';
+            } else if (act === 'w-50') {
+                activeImg.style.width = '50%';
+                activeImg.style.height = 'auto';
+            } else if (act === 'w-75') {
+                activeImg.style.width = '75%';
+                activeImg.style.height = 'auto';
+            } else if (act === 'w-100') {
+                activeImg.style.width = '100%';
+                activeImg.style.height = 'auto';
+            } else if (act === 'del') {
+                const blot = Quill.find(activeImg);
+                if (blot) blot.deleteAt(0);
+                else activeImg.remove();
+                hideOverlay();
+                quillInstance.update();
+                return;
+            }
+            repositionOverlay();
+            quillInstance.update();
+        });
+
+        overlay.appendChild(toolbar);
+        container.appendChild(overlay);
+
+        function repositionOverlay() {
+            if (!activeImg) {
+                overlay.style.display = 'none';
+                return;
+            }
+
+            const imgRect = activeImg.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+
+            const top = (imgRect.top - containerRect.top) + container.scrollTop;
+            const left = (imgRect.left - containerRect.left) + container.scrollLeft;
+
+            overlay.style.top = `${top}px`;
+            overlay.style.left = `${left}px`;
+            overlay.style.width = `${imgRect.width}px`;
+            overlay.style.height = `${imgRect.height}px`;
+            overlay.style.display = 'block';
+        }
+
+        function showOverlay(img) {
+            activeImg = img;
+            repositionOverlay();
+        }
+
+        function hideOverlay() {
+            if (isDragging) return;
+            activeImg = null;
+            overlay.style.display = 'none';
+        }
+
+        // Image click listener inside editor
+        root.addEventListener('click', function(e) {
+            if (e.target && e.target.tagName === 'IMG') {
+                e.stopPropagation();
+                showOverlay(e.target);
+            } else if (!e.target.closest('.quill-img-resizer-overlay')) {
+                hideOverlay();
+            }
+        });
+
+        // Hide overlay on outside click
+        document.addEventListener('click', function(e) {
+            if (!container.contains(e.target)) {
+                hideOverlay();
+            }
+        });
+
+        // Handle scrolling and resizing
+        container.addEventListener('scroll', function() {
+            if (activeImg) repositionOverlay();
+        });
+        window.addEventListener('resize', function() {
+            if (activeImg) repositionOverlay();
+        });
+
+        // Mouse Drag Resizing
+        function startResize(e, handle) {
+            if (!activeImg) return;
+            isDragging = true;
+            currentHandle = handle;
+            startX = e.clientX;
+            startY = e.clientY;
+            startWidth = activeImg.offsetWidth || activeImg.getBoundingClientRect().width;
+            startHeight = activeImg.offsetHeight || activeImg.getBoundingClientRect().height;
+
+            document.documentElement.style.cursor = `${handle}-resize`;
+            document.documentElement.style.userSelect = 'none';
+
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp);
+        }
+
+        function onMouseMove(e) {
+            if (!isDragging || !activeImg) return;
+
+            const deltaX = e.clientX - startX;
+            let newWidth = startWidth;
+
+            if (currentHandle === 'se' || currentHandle === 'ne') {
+                newWidth = startWidth + deltaX;
+            } else if (currentHandle === 'sw' || currentHandle === 'nw') {
+                newWidth = startWidth - deltaX;
+            }
+
+            // Min and max limits
+            const minWidth = 40;
+            const maxWidth = container.offsetWidth - 20;
+            newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+
+            activeImg.style.width = `${Math.round(newWidth)}px`;
+            activeImg.style.height = 'auto'; // Maintain aspect ratio
+            activeImg.style.maxWidth = '100%';
+
+            repositionOverlay();
+        }
+
+        function onMouseUp() {
+            if (!isDragging) return;
+            isDragging = false;
+            currentHandle = null;
+
+            document.documentElement.style.cursor = '';
+            document.documentElement.style.userSelect = '';
+
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+
+            quillInstance.update();
+            if (activeImg) repositionOverlay();
+        }
+    }
+
+    // ─── Microsoft Word Style Line & Paragraph Spacing for Quill ───────────────
+    function setupQuillLineSpacing(targetQuill) {
+        if (!targetQuill || !targetQuill.container) return;
+
+        registerQuillLineSpacingParchment();
+
+        const toolbar = targetQuill.getModule('toolbar');
+        if (!toolbar || !toolbar.container) return;
+        const tbContainer = toolbar.container;
+
+        // Prevent duplicate insertion
+        if (tbContainer.querySelector('.ql-line-spacing-container')) return;
+
+        const span = document.createElement('span');
+        span.className = 'ql-formats ql-line-spacing-container';
+        span.style.position = 'relative';
+        span.style.display = 'inline-block';
+        span.style.verticalAlign = 'middle';
+
+        span.innerHTML = `
+            <button type="button" class="ql-line-spacing-btn" title="Line and Paragraph Spacing (Like MS Word)" style="display:inline-flex; align-items:center; justify-content:center; height:24px; min-width:32px; padding:2px 4px; border:none; background:transparent; cursor:pointer; border-radius:4px; color:#475569; transition:background-color 0.15s, color 0.15s;">
+                <!-- MS Word Up-Down Line Spacing Icon -->
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;">
+                    <polyline points="3.5 6 6 3.5 8.5 6"></polyline>
+                    <polyline points="3.5 18 6 20.5 8.5 18"></polyline>
+                    <line x1="6" y1="3.5" x2="6" y2="20.5"></line>
+                    <line x1="12" y1="5" x2="22" y2="5"></line>
+                    <line x1="12" y1="10" x2="22" y2="10"></line>
+                    <line x1="12" y1="15" x2="22" y2="15"></line>
+                    <line x1="12" y1="20" x2="22" y2="20"></line>
+                </svg>
+                <svg viewBox="0 0 20 20" width="10" height="10" fill="currentColor" style="margin-left:2px; opacity:0.6;">
+                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                </svg>
+            </button>
+            <div class="ql-line-spacing-menu hidden" style="position:absolute; top:calc(100% + 4px); left:0; z-index:9999; background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1); padding:6px 0; min-width:215px; font-family:'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; font-size:12px; color:#1e293b; user-select:none;">
+                <div style="padding:4px 14px; font-size:10px; font-weight:800; text-transform:uppercase; color:#94a3b8; letter-spacing:0.05em;">Line Spacing</div>
+                <div class="ql-ls-option" data-lh="1.0" style="padding:5px 14px; display:flex; align-items:center; justify-content:space-between; cursor:pointer;">
+                    <span>1.0 &nbsp;<span style="color:#94a3b8; font-size:11px;">(Single)</span></span>
+                    <span class="ql-ls-check" style="color:#2563eb; font-weight:bold; visibility:hidden;">✓</span>
+                </div>
+                <div class="ql-ls-option" data-lh="1.15" style="padding:5px 14px; display:flex; align-items:center; justify-content:space-between; cursor:pointer;">
+                    <span>1.15 &nbsp;<span style="color:#94a3b8; font-size:11px;">(Word Default)</span></span>
+                    <span class="ql-ls-check" style="color:#2563eb; font-weight:bold; visibility:hidden;">✓</span>
+                </div>
+                <div class="ql-ls-option" data-lh="1.5" style="padding:5px 14px; display:flex; align-items:center; justify-content:space-between; cursor:pointer;">
+                    <span>1.5 &nbsp;<span style="color:#94a3b8; font-size:11px;">(1.5 Lines)</span></span>
+                    <span class="ql-ls-check" style="color:#2563eb; font-weight:bold; visibility:hidden;">✓</span>
+                </div>
+                <div class="ql-ls-option" data-lh="2.0" style="padding:5px 14px; display:flex; align-items:center; justify-content:space-between; cursor:pointer;">
+                    <span>2.0 &nbsp;<span style="color:#94a3b8; font-size:11px;">(Double)</span></span>
+                    <span class="ql-ls-check" style="color:#2563eb; font-weight:bold; visibility:hidden;">✓</span>
+                </div>
+                <div class="ql-ls-option" data-lh="2.5" style="padding:5px 14px; display:flex; align-items:center; justify-content:space-between; cursor:pointer;">
+                    <span>2.5</span>
+                    <span class="ql-ls-check" style="color:#2563eb; font-weight:bold; visibility:hidden;">✓</span>
+                </div>
+                <div class="ql-ls-option" data-lh="3.0" style="padding:5px 14px; display:flex; align-items:center; justify-content:space-between; cursor:pointer;">
+                    <span>3.0</span>
+                    <span class="ql-ls-check" style="color:#2563eb; font-weight:bold; visibility:hidden;">✓</span>
+                </div>
+
+                <div style="margin:4px 0; border-top:1px solid #f1f5f9;"></div>
+                <div style="padding:4px 14px; font-size:10px; font-weight:800; text-transform:uppercase; color:#94a3b8; letter-spacing:0.05em;">Paragraph Spacing</div>
+
+                <div class="ql-ls-action" data-action="toggle-before" style="padding:5px 14px; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                    <span style="color:#64748b; font-weight:bold; width:12px; text-align:center;">↑</span>
+                    <span class="ql-ls-before-label">Add Space Before Paragraph</span>
+                </div>
+                <div class="ql-ls-action" data-action="toggle-after" style="padding:5px 14px; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                    <span style="color:#64748b; font-weight:bold; width:12px; text-align:center;">↓</span>
+                    <span class="ql-ls-after-label">Add Space After Paragraph</span>
+                </div>
+                <div class="ql-ls-action" data-action="remove-both" style="padding:5px 14px; display:flex; align-items:center; gap:8px; cursor:pointer; color:#b91c1c;">
+                    <span style="font-weight:bold; width:12px; text-align:center;">✕</span>
+                    <span>Remove Paragraph Spacing</span>
+                </div>
+
+                <div style="margin:4px 0; border-top:1px solid #f1f5f9;"></div>
+
+                <div class="ql-ls-action" data-action="custom" style="padding:5px 14px; display:flex; align-items:center; gap:8px; cursor:pointer; color:#2563eb; font-weight:600;">
+                    <span style="width:12px; text-align:center;">⚙</span>
+                    <span>Custom Line Spacing...</span>
+                </div>
+            </div>
+        `;
+
+        // Insert right after the align group or list group
+        const alignGroup = tbContainer.querySelector('.ql-align')?.closest('.ql-formats');
+        const listGroup = tbContainer.querySelector('.ql-list')?.closest('.ql-formats');
+        if (alignGroup && alignGroup.nextSibling) {
+            tbContainer.insertBefore(span, alignGroup.nextSibling);
+        } else if (listGroup && listGroup.nextSibling) {
+            tbContainer.insertBefore(span, listGroup.nextSibling);
+        } else {
+            tbContainer.appendChild(span);
+        }
+
+        const btn = span.querySelector('.ql-line-spacing-btn');
+        const menu = span.querySelector('.ql-line-spacing-menu');
+
+        // Hover effect for button
+        btn.addEventListener('mouseenter', () => {
+            btn.style.backgroundColor = '#f1f5f9';
+            btn.style.color = '#0284c7';
+        });
+        btn.addEventListener('mouseleave', () => {
+            if (menu.classList.contains('hidden')) {
+                btn.style.backgroundColor = 'transparent';
+                btn.style.color = '#475569';
+            }
+        });
+
+        // Options hover styling
+        const allItems = menu.querySelectorAll('.ql-ls-option, .ql-ls-action');
+        allItems.forEach(item => {
+            item.addEventListener('mouseenter', () => {
+                if (!item.dataset.action || item.dataset.action !== 'remove-both') {
+                    item.style.backgroundColor = '#f8fafc';
+                } else {
+                    item.style.backgroundColor = '#fef2f2';
+                }
+            });
+            item.addEventListener('mouseleave', () => {
+                item.style.backgroundColor = 'transparent';
+            });
+
+            // PREVENT BLUR: mousedown prevents editor losing focus/selection!
+            item.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+            });
+        });
+
+        function updateMenuState() {
+            const range = targetQuill.getSelection();
+            let format = {};
+            if (range) {
+                format = targetQuill.getFormat(range);
+            } else {
+                format = targetQuill.getFormat(0, 1);
+            }
+
+            const currentLh = format.lineheight ? String(format.lineheight) : '1.15';
+            menu.querySelectorAll('.ql-ls-option').forEach(opt => {
+                const check = opt.querySelector('.ql-ls-check');
+                const lh = opt.getAttribute('data-lh');
+                if (check) {
+                    check.style.visibility = (lh === currentLh || (lh === '1.0' && currentLh === '1')) ? 'visible' : 'hidden';
+                }
+            });
+
+            const beforeLabel = menu.querySelector('.ql-ls-before-label');
+            if (beforeLabel) {
+                beforeLabel.textContent = format.spacebefore ? 'Remove Space Before Paragraph' : 'Add Space Before Paragraph';
+            }
+
+            const afterLabel = menu.querySelector('.ql-ls-after-label');
+            if (afterLabel) {
+                afterLabel.textContent = format.spaceafter ? 'Remove Space After Paragraph' : 'Add Space After Paragraph';
+            }
+        }
+
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const isHidden = menu.classList.contains('hidden');
+            // Close any other open line spacing menus
+            document.querySelectorAll('.ql-line-spacing-menu').forEach(m => m.classList.add('hidden'));
+
+            if (isHidden) {
+                updateMenuState();
+                menu.classList.remove('hidden');
+                btn.style.backgroundColor = '#e2e8f0';
+                btn.style.color = '#0284c7';
+            } else {
+                menu.classList.add('hidden');
+                btn.style.backgroundColor = 'transparent';
+                btn.style.color = '#475569';
+            }
+        });
+
+        // Close on click outside
+        document.addEventListener('click', (e) => {
+            if (!span.contains(e.target)) {
+                menu.classList.add('hidden');
+                btn.style.backgroundColor = 'transparent';
+                btn.style.color = '#475569';
+            }
+        });
+
+        // Handle line height option clicks
+        menu.querySelectorAll('.ql-ls-option').forEach(opt => {
+            opt.addEventListener('click', (e) => {
+                e.preventDefault();
+                const lh = opt.getAttribute('data-lh');
+                const range = targetQuill.getSelection() || { index: 0, length: targetQuill.getLength() };
+                const len = Math.max(range.length, 1);
+                targetQuill.formatLine(range.index, len, 'lineheight', lh, 'user');
+                menu.classList.add('hidden');
+                btn.style.backgroundColor = 'transparent';
+                btn.style.color = '#475569';
+            });
+        });
+
+        // Handle spacing action clicks
+        menu.querySelectorAll('.ql-ls-action').forEach(act => {
+            act.addEventListener('click', (e) => {
+                e.preventDefault();
+                const action = act.getAttribute('data-action');
+                const range = targetQuill.getSelection() || { index: 0, length: targetQuill.getLength() };
+                const len = Math.max(range.length, 1);
+                const format = targetQuill.getFormat(range);
+
+                if (action === 'toggle-before') {
+                    const newVal = format.spacebefore ? false : '14px';
+                    targetQuill.formatLine(range.index, len, 'spacebefore', newVal, 'user');
+                } else if (action === 'toggle-after') {
+                    const newVal = format.spaceafter ? false : '14px';
+                    targetQuill.formatLine(range.index, len, 'spaceafter', newVal, 'user');
+                } else if (action === 'remove-both') {
+                    targetQuill.formatLine(range.index, len, 'spacebefore', false, 'user');
+                    targetQuill.formatLine(range.index, len, 'spaceafter', false, 'user');
+                } else if (action === 'custom') {
+                    const customVal = prompt('Enter custom line spacing (e.g. 1.15, 1.25, 1.4, 1.6, 2.2, or 24px):', format.lineheight || '1.25');
+                    if (customVal && customVal.trim()) {
+                        targetQuill.formatLine(range.index, len, 'lineheight', customVal.trim(), 'user');
+                    }
+                }
+
+                menu.classList.add('hidden');
+                btn.style.backgroundColor = 'transparent';
+                btn.style.color = '#475569';
+            });
+        });
+    }
+</script>

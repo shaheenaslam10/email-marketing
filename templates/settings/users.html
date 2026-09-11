@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block page_title %}Users & Role-Based Access Control{% endblock %}
+
+{% block header_actions %}
+<button onclick="openAddUserModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-xl shadow-md shadow-blue-500/20 flex items-center gap-2 transition-all">
+    <i data-lucide="user-plus" class="w-4 h-4"></i>
+    Add User
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <table class="w-full text-left border-collapse text-sm">
+            <thead>
+                <tr class="bg-slate-50/75 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <th class="py-3.5 px-6">Username</th>
+                    <th class="py-3.5 px-6">Email</th>
+                    <th class="py-3.5 px-6">Role</th>
+                    <th class="py-3.5 px-6 text-center">Active</th>
+                    <th class="py-3.5 px-6 text-right">Date Joined</th>
+                </tr>
+            </thead>
+            <tbody id="users-tbody" class="divide-y divide-slate-100">
+                <tr><td colspan="5" class="py-8 text-center text-slate-400">Loading users...</td></tr>
+            </tbody>
+        </table>
+        <!-- Pagination Container -->
+        <div id="users-pagination-container"></div>
+    </div>
+</div>
+
+<!-- Add User Modal -->
+<div id="user-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+            <h3 class="text-base font-bold text-slate-900">Add Platform User</h3>
+            <button onclick="closeAddUserModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <form onsubmit="submitAddUser(event)" class="space-y-4 pt-4 text-sm">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Username *</label>
+                <input type="text" id="usr-username" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Email *</label>
+                <input type="email" id="usr-email" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Password *</label>
+                <input type="password" id="usr-password" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Role (Section 4)</label>
+                <select id="usr-role" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium">
+                    <option value="SUPER_ADMIN">Super Admin (Full access)</option>
+                    <option value="ADMIN" selected>Admin (Contacts, Campaigns, Groups, ODK)</option>
+                    <option value="CAMPAIGN_MANAGER">Campaign Manager (Create & Send, No SMTP creds)</option>
+                    <option value="VIEWER">Viewer (Reports only)</option>
+                </select>
+            </div>
+            <div class="pt-4 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onclick="closeAddUserModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50">Cancel</button>
+                <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md">Create User</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let currentUsersPage = 1;
+    let currentUsersPageSize = 25;
+
+    function changeUsersPage(page) {
+        currentUsersPage = page;
+        loadUsers(currentUsersPage);
+    }
+
+    function changeUsersPageSize(newSize) {
+        currentUsersPageSize = newSize;
+        currentUsersPage = 1;
+        loadUsers(1);
+    }
+
+    async function loadUsers(page = 1) {
+        currentUsersPage = page;
+        try {
+            const res = await fetch(`/api/users/?page=${currentUsersPage}&page_size=${currentUsersPageSize}`);
+            const data = await res.json();
+            const users = data.results || (Array.isArray(data) ? data : []);
+            const tbody = document.getElementById('users-tbody');
+
+            const totalCount = data.count !== undefined ? data.count : users.length;
+            const totalPages = data.total_pages || Math.ceil(totalCount / currentUsersPageSize) || 1;
+            const currentPage = data.current_page || currentUsersPage;
+
+            if (!users || users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-slate-400">No users found.</td></tr>';
+                renderPagination({
+                    containerId: 'users-pagination-container',
+                    totalCount: 0
+                });
+                return;
+            }
+
+            tbody.innerHTML = users.map(u => `
+                <tr class="hover:bg-slate-50 text-xs">
+                    <td class="py-4 px-6 font-bold text-slate-900">${u.username}</td>
+                    <td class="py-4 px-6 text-slate-600">${u.email}</td>
+                    <td class="py-4 px-6">
+                        <span class="px-2.5 py-0.5 rounded-full font-bold bg-indigo-50 text-indigo-700 text-[11px]">${u.role}</span>
+                    </td>
+                    <td class="py-4 px-6 text-center">
+                        <span class="px-2 py-0.5 rounded-full font-bold ${u.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">${u.is_active ? 'Active' : 'Inactive'}</span>
+                    </td>
+                    <td class="py-4 px-6 text-right text-slate-500">${new Date(u.date_joined).toLocaleDateString()}</td>
+                </tr>
+            `).join('');
+
+            renderPagination({
+                containerId: 'users-pagination-container',
+                totalCount: totalCount,
+                currentPage: currentPage,
+                pageSize: currentUsersPageSize,
+                totalPages: totalPages,
+                onPageChange: 'changeUsersPage',
+                onPageSizeChange: 'changeUsersPageSize'
+            });
+
+            lucide.createIcons();
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    function openAddUserModal() { document.getElementById('user-modal').classList.remove('hidden'); }
+    function closeAddUserModal() { document.getElementById('user-modal').classList.add('hidden'); }
+
+    async function submitAddUser(e) {
+        e.preventDefault();
+        const payload = {
+            username: document.getElementById('usr-username').value,
+            email: document.getElementById('usr-email').value,
+            password: document.getElementById('usr-password').value,
+            role: document.getElementById('usr-role').value,
+        };
+        const res = await fetch('/api/users/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+            showToast('User created');
+            closeAddUserModal();
+            loadUsers(1);
+        } else {
+            const err = await res.json();
+            alert('Error: ' + JSON.stringify(err));
+        }
+    }
+
+    loadUsers(1);
+</script>
+{% endblock %}

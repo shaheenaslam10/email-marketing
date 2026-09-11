@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block page_title %}Audit Logs (Section 91){% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <table class="w-full text-left border-collapse text-sm">
+            <thead>
+                <tr class="bg-slate-50/75 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <th class="py-3.5 px-6">Timestamp</th>
+                    <th class="py-3.5 px-6">User</th>
+                    <th class="py-3.5 px-6">Action</th>
+                    <th class="py-3.5 px-6">Target Entity</th>
+                    <th class="py-3.5 px-6 text-right">Details</th>
+                </tr>
+            </thead>
+            <tbody id="audit-tbody" class="divide-y divide-slate-100">
+                <tr><td colspan="5" class="py-8 text-center text-slate-400">Loading audit logs...</td></tr>
+            </tbody>
+        </table>
+        <!-- Pagination Container -->
+        <div id="audit-pagination-container"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let currentAuditPage = 1;
+    let currentAuditPageSize = 25;
+
+    function changeAuditPage(page) {
+        currentAuditPage = page;
+        loadAuditLogs(currentAuditPage);
+    }
+
+    function changeAuditPageSize(newSize) {
+        currentAuditPageSize = newSize;
+        currentAuditPage = 1;
+        loadAuditLogs(1);
+    }
+
+    async function loadAuditLogs(page = 1) {
+        currentAuditPage = page;
+        try {
+            const res = await fetch(`/api/audit-logs/?page=${currentAuditPage}&page_size=${currentAuditPageSize}`);
+            const data = await res.json();
+            const logs = data.results || (Array.isArray(data) ? data : []);
+            const tbody = document.getElementById('audit-tbody');
+
+            const totalCount = data.count !== undefined ? data.count : logs.length;
+            const totalPages = data.total_pages || Math.ceil(totalCount / currentAuditPageSize) || 1;
+            const currentPage = data.current_page || currentAuditPage;
+
+            if (!logs || logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-slate-400">No audit events recorded yet.</td></tr>';
+                renderPagination({
+                    containerId: 'audit-pagination-container',
+                    totalCount: 0
+                });
+                return;
+            }
+
+            tbody.innerHTML = logs.map(l => `
+                <tr class="hover:bg-slate-50 text-xs">
+                    <td class="py-4 px-6 text-slate-500 font-mono">${new Date(l.timestamp).toLocaleString()}</td>
+                    <td class="py-4 px-6 font-bold text-slate-900">${l.username || 'System'}</td>
+                    <td class="py-4 px-6">
+                        <span class="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold">${l.action}</span>
+                    </td>
+                    <td class="py-4 px-6 text-slate-700 font-medium">${l.entity_type} ${l.entity_id ? `(#${l.entity_id})` : ''}</td>
+                    <td class="py-4 px-6 text-right text-slate-500 font-mono text-[11px]">${JSON.stringify(l.details || {})}</td>
+                </tr>
+            `).join('');
+
+            renderPagination({
+                containerId: 'audit-pagination-container',
+                totalCount: totalCount,
+                currentPage: currentPage,
+                pageSize: currentAuditPageSize,
+                totalPages: totalPages,
+                onPageChange: 'changeAuditPage',
+                onPageSizeChange: 'changeAuditPageSize'
+            });
+
+            lucide.createIcons();
+        } catch (err) {
+            console.error(err);
+        }
+    }
+    loadAuditLogs(1);
+</script>
+{% endblock %}

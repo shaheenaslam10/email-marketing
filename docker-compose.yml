@@ -1,0 +1,117 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: email_platform_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-email_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: email_platform_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: email_platform_web
+    restart: unless-stopped
+    command: gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120
+    volumes:
+      - .:/app
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY:-django-insecure-prod-key-please-change}
+      - ALLOWED_HOSTS=*
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-email_platform}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CELERY_TASK_ALWAYS_EAGER=False
+      - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY:-9V4HkG7xJ6wQ2Z1yP8mN3tL5rS0vF4eD2aB8cE1fH3g=}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_worker:
+    build: .
+    container_name: email_platform_worker
+    restart: unless-stopped
+    command: celery -A core worker -l info -c 4
+    volumes:
+      - .:/app
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY:-django-insecure-prod-key-please-change}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-email_platform}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CELERY_TASK_ALWAYS_EAGER=False
+      - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY:-9V4HkG7xJ6wQ2Z1yP8mN3tL5rS0vF4eD2aB8cE1fH3g=}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_beat:
+    build: .
+    container_name: email_platform_beat
+    restart: unless-stopped
+    command: celery -A core beat -l info
+    volumes:
+      - .:/app
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=${SECRET_KEY:-django-insecure-prod-key-please-change}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-email_platform}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CELERY_TASK_ALWAYS_EAGER=False
+      - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY:-9V4HkG7xJ6wQ2Z1yP8mN3tL5rS0vF4eD2aB8cE1fH3g=}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:alpine
+    container_name: email_platform_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - static_volume:/app/staticfiles:ro
+      - media_volume:/app/media:ro
+    depends_on:
+      - web
+
+volumes:
+  postgres_data:
+  redis_data:
+  static_volume:
+  media_volume:

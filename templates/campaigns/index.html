@@ -1,0 +1,856 @@
+{% extends "base.html" %}
+
+{% block page_title %}Email Campaigns{% endblock %}
+
+{% block header_actions %}
+<div class="flex items-center gap-2">
+    <a href="/campaigns/create/" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-md shadow-blue-500/20 flex items-center gap-2 transition-all">
+        <i data-lucide="plus-circle" class="w-4 h-4"></i>
+        Create New Campaign
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+    <!-- Bulk Action Bar (Only shown when one or more campaigns are ticked) -->
+    <div id="campaigns-bulk-bar" class="hidden bg-slate-900 text-white px-6 py-3 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-xl animate-in fade-in duration-200 z-10 relative">
+        <div class="flex items-center gap-3">
+            <span class="text-xs font-bold bg-blue-600 px-2.5 py-1 rounded-lg" id="selected-campaigns-count">0 selected</span>
+            <span class="text-xs text-amber-300 font-semibold" id="duplicate-detected-note"></span>
+            <button type="button" onclick="clearCampaignSelections()" class="text-xs text-slate-400 hover:text-white underline">Deselect all</button>
+        </div>
+        <div class="flex items-center gap-2">
+            <button onclick="executeBulkDeleteCampaigns()" class="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition-colors">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                Delete Selected
+            </button>
+        </div>
+    </div>
+
+    <!-- Campaigns Table -->
+    <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        <th class="py-3.5 px-3 w-10 text-center">
+                            <input type="checkbox" id="check-all-campaigns" onchange="toggleSelectAllCampaigns(this.checked)" class="rounded text-blue-600 border-slate-300 focus:ring-blue-500">
+                        </th>
+                        <th class="py-3.5 px-3.5">Campaign Name</th>
+                        <th class="py-3.5 px-3">Type</th>
+                        <th class="py-3.5 px-3">Sender</th>
+                        <th class="py-3.5 px-3">ODK Entity List</th>
+                        <th class="py-3.5 px-3 text-center">Status</th>
+                        <th class="py-3.5 px-3">Next Reminder</th>
+                        <th class="py-3.5 px-3.5 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="campaigns-tbody" class="divide-y divide-slate-100">
+                    <tr><td colspan="8" class="py-12 text-center text-slate-400">Loading campaigns...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <!-- Pagination Container -->
+        <div id="campaigns-pagination-container"></div>
+    </div>
+</div>
+
+<!-- Modal: Quick Rename Campaign -->
+<div id="rename-campaign-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+            <div class="flex items-center gap-2">
+                <div class="p-1.5 bg-blue-50 text-blue-600 rounded-lg"><i data-lucide="edit-3" class="w-4 h-4"></i></div>
+                <h3 class="text-base font-bold text-slate-900">Rename Campaign</h3>
+            </div>
+            <button onclick="closeRenameModal()" class="text-slate-400 hover:text-slate-600 p-1"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <form onsubmit="submitRenameCampaign(event)" class="space-y-4 pt-4 text-sm">
+            <input type="hidden" id="rename-campaign-id">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Campaign Name *</label>
+                <input type="text" id="rename-campaign-name" required class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-slate-900">
+            </div>
+            <div class="pt-4 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onclick="closeRenameModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50 text-xs">Cancel</button>
+                <button type="submit" id="btn-save-rename" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md text-xs">Save Name</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Edit Campaign Choice (Draft vs Send) -->
+<div id="edit-campaign-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <!-- Header -->
+        <div class="bg-[#dcfce7] p-5 border-b border-emerald-100 flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+                <div class="p-2 bg-emerald-600 text-white rounded-xl shadow-sm">
+                    <i data-lucide="edit-3" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-slate-900">Edit Campaign</h3>
+                    <p class="text-xs text-emerald-800 font-medium" id="edit-choice-campaign-name">Campaign Name</p>
+                </div>
+            </div>
+            <button type="button" onclick="closeEditCampaignModal()" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="p-6 space-y-4">
+            <p class="text-xs text-slate-500 font-medium">Please choose how you would like to proceed with editing this campaign:</p>
+
+            <div class="grid grid-cols-1 gap-3">
+                <!-- Option 1: Edit as Draft -->
+                <div onclick="proceedEditCampaign('draft')" class="group p-4 rounded-2xl border-2 border-slate-200 hover:border-slate-400 hover:bg-slate-50/80 cursor-pointer transition-all flex items-start gap-3.5">
+                    <div class="p-2.5 bg-slate-100 group-hover:bg-white text-slate-600 rounded-xl border border-slate-200 mt-0.5">
+                        <i data-lucide="file-text" class="w-5 h-5"></i>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between">
+                            <h4 class="text-sm font-bold text-slate-900 group-hover:text-blue-600">Edit as Draft</h4>
+                            <span class="text-[11px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md">Draft Mode</span>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-1 leading-relaxed">
+                            Edit campaign settings, templates, sender details, or ODK datasets safely without triggering any emails.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Option 2: Save & Send / Schedule -->
+                <div onclick="proceedEditCampaign('send')" class="group p-4 rounded-2xl border-2 border-emerald-300 hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50 cursor-pointer transition-all flex items-start gap-3.5">
+                    <div class="p-2.5 bg-emerald-600 text-white rounded-xl shadow-sm mt-0.5">
+                        <i data-lucide="send" class="w-5 h-5"></i>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between">
+                            <h4 class="text-sm font-bold text-slate-900 group-hover:text-emerald-700">Save & Send / Schedule</h4>
+                            <span class="text-[11px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md">Ready to Launch</span>
+                        </div>
+                        <p class="text-xs text-slate-600 mt-1 leading-relaxed">
+                            Open review & send step. Choose to <strong>Send Now</strong>, <strong>Schedule for later</strong>, or <strong>Send in batches</strong> with pacing controls.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+            <button type="button" onclick="closeEditCampaignModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-white text-xs">
+                Cancel
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Trigger / Schedule Reminder -->
+<div id="trigger-reminder-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <!-- Brevo-style Mint Green Accent Header -->
+        <div class="bg-[#dcfce7] p-5 border-b border-emerald-100 flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+                <div class="p-2 bg-emerald-600 text-white rounded-xl shadow-sm">
+                    <i data-lucide="bell-ring" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-slate-900">Schedule & Send Reminder</h3>
+                    <p class="text-xs text-emerald-800 font-medium" id="rem-modal-campaign-name">Campaign</p>
+                </div>
+            </div>
+            <button type="button" onclick="closeReminderModal()" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="p-6 space-y-4 text-xs max-h-[75vh] overflow-y-auto">
+            <!-- ODK Sync info -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div class="p-3 bg-indigo-50/70 border border-indigo-100 rounded-2xl space-y-1">
+                    <div class="flex items-center gap-1.5 text-indigo-900 font-bold">
+                        <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-indigo-600"></i>
+                        <span>ODK Central Sync</span>
+                    </div>
+                    <p class="text-indigo-800 leading-tight text-[11px]">
+                        Syncs entity list: <strong id="rem-modal-odk-name" class="font-bold text-indigo-950"></strong>. Excludes submissions.
+                    </p>
+                </div>
+
+                <div class="p-3 bg-emerald-50/70 border border-emerald-100 rounded-2xl space-y-1">
+                    <div class="flex items-center gap-1.5 text-emerald-900 font-bold">
+                        <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-600"></i>
+                        <span>UNUSED Contacts Only</span>
+                    </div>
+                    <p class="text-emerald-800 leading-tight text-[11px]">
+                        Dispatched strictly to contacts still UNUSED. USED respondents are safely bypassed.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Reminder Subject Line -->
+            <div class="space-y-1.5">
+                <label class="block text-xs font-bold text-slate-700 uppercase">Reminder Subject Line *</label>
+                <input type="text" id="rem-modal-subject" required class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                <p class="text-[11px] text-slate-400">Word <strong>[Reminder]</strong> automatically preserved in subject.</p>
+            </div>
+
+            <!-- Schedule Timing Options (Brevo Style) -->
+            <div class="space-y-3 pt-2">
+                <label class="block text-xs font-bold text-slate-800">When would you like to send the reminder?</label>
+
+                <!-- Option: Send now -->
+                <label class="flex items-center justify-between p-3.5 border border-slate-200 rounded-2xl hover:bg-slate-50 cursor-pointer transition-colors">
+                    <div class="flex items-center gap-3">
+                        <input type="radio" name="rem_send_mode" value="now" checked onchange="onReminderModeChange()" class="w-4 h-4 text-emerald-600 border-slate-300 focus:ring-emerald-500">
+                        <span class="font-semibold text-slate-800">Send now</span>
+                    </div>
+                </label>
+
+                <!-- Option: Schedule for later -->
+                <div class="border border-slate-200 rounded-2xl transition-colors overflow-hidden">
+                    <label class="flex items-center justify-between p-3.5 hover:bg-slate-50 cursor-pointer">
+                        <div class="flex items-center gap-3">
+                            <input type="radio" name="rem_send_mode" value="schedule" onchange="onReminderModeChange()" class="w-4 h-4 text-emerald-600 border-slate-300 focus:ring-emerald-500">
+                            <span class="font-semibold text-slate-800">Schedule for later</span>
+                        </div>
+                    </label>
+                    <div id="rem-schedule-datetime-container" class="hidden px-4 pb-4 pt-1 bg-slate-50/60 border-t border-slate-100 space-y-2">
+                        <label class="block text-[11px] font-semibold text-slate-600">Select Date & Time</label>
+                        <input type="datetime-local" id="rem-schedule-datetime" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                </div>
+
+                <!-- Option: Send in batches -->
+                <div class="border border-slate-200 rounded-2xl transition-colors overflow-hidden">
+                    <label class="flex items-center justify-between p-3.5 hover:bg-slate-50 cursor-pointer">
+                        <div class="flex items-center gap-3">
+                            <input type="radio" name="rem_send_mode" value="batches" onchange="onReminderModeChange()" class="w-4 h-4 text-emerald-600 border-slate-300 focus:ring-emerald-500">
+                            <span class="font-semibold text-slate-800">Send in batches</span>
+                            <span class="text-amber-500 text-sm" title="Paced delivery">👑</span>
+                        </div>
+                    </label>
+
+                    <div id="rem-batch-settings-container" class="hidden p-4 bg-amber-50/40 border-t border-amber-100 space-y-3">
+                        <div class="bg-amber-100/60 border border-amber-200/80 rounded-xl p-3 text-xs text-amber-900 leading-relaxed">
+                            <div class="font-bold flex items-center gap-1.5 text-amber-950 mb-1">
+                                <i data-lucide="gauge" class="w-3.5 h-3.5"></i>
+                                Control your sending pace
+                            </div>
+                            Split large volumes of emails into smaller batches and schedule them throughout the day. Improve deliverability and catch issues early.
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3 pt-1">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-700 mb-1">Batch Size</label>
+                                <input type="number" id="rem-batch-size" value="50" min="5" max="1000" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 font-semibold">
+                                <p class="text-[10px] text-slate-400 mt-1">Emails per batch</p>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-700 mb-1">Interval (minutes)</label>
+                                <input type="number" id="rem-batch-interval" value="30" min="5" max="1440" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 font-semibold">
+                                <p class="text-[10px] text-slate-400 mt-1">Wait time between batches</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="rem-modal-status-box" class="hidden p-3 rounded-xl text-xs"></div>
+        </div>
+
+        <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+            <button type="button" onclick="closeReminderModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-white text-xs">
+                Cancel
+            </button>
+            <button type="button" id="btn-confirm-reminder" onclick="executeSendReminder()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md shadow-emerald-600/20 text-xs flex items-center gap-1.5 transition-all">
+                <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                <span id="rem-btn-label">Check ODK & Send Reminder</span>
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Always show action buttons regardless of checkbox/tick state */
+    #campaigns-tbody td:last-child {
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+    /* Allow the action dropdown to escape the table overflow */
+    #campaigns-tbody tr {
+        position: relative;
+    }
+</style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let currentCampaignPage = 1;
+    let currentCampaignPageSize = 25;
+    let loadedCampaigns = [];
+    let selectedCampaignIds = new Set();
+
+    function changeCampaignsPage(page) {
+        currentCampaignPage = page;
+        loadCampaigns(currentCampaignPage);
+    }
+
+    function changeCampaignsPageSize(newSize) {
+        currentCampaignPageSize = newSize;
+        currentCampaignPage = 1;
+        loadCampaigns(1);
+    }
+
+    async function loadCampaigns(page = 1) {
+        currentCampaignPage = page;
+        try {
+            const res = await fetch(`/api/campaigns/?page=${currentCampaignPage}&page_size=${currentCampaignPageSize}`);
+            const data = await res.json();
+            loadedCampaigns = data.results || (Array.isArray(data) ? data : []);
+            const tbody = document.getElementById('campaigns-tbody');
+
+            const totalCount = data.count !== undefined ? data.count : loadedCampaigns.length;
+            const totalPages = data.total_pages || Math.ceil(totalCount / currentCampaignPageSize) || 1;
+            const currentPage = data.current_page || currentCampaignPage;
+
+            if (!loadedCampaigns || loadedCampaigns.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400">No campaigns created yet. Click "Create New Campaign" to get started.</td></tr>`;
+                renderPagination({
+                    containerId: 'campaigns-pagination-container',
+                    totalCount: 0
+                });
+                updateBulkBar();
+                return;
+            }
+
+            tbody.innerHTML = loadedCampaigns.map(c => {
+                const isChecked = selectedCampaignIds.has(c.id);
+                return `
+                    <tr class="hover:bg-slate-50/80 transition-colors ${isChecked ? 'bg-blue-50/40' : ''}" id="camp-row-${c.id}">
+                        <td class="py-3.5 px-3 text-center">
+                            <input type="checkbox" value="${c.id}" ${isChecked ? 'checked' : ''} onchange="onCampaignCheckChange(${c.id}, this.checked)" class="campaign-cb rounded text-blue-600 border-slate-300 focus:ring-blue-500">
+                        </td>
+                        <td class="py-3.5 px-3.5">
+                            <div class="font-bold text-slate-900">
+                                <a href="/campaigns/${c.id}/report/" class="hover:text-blue-600">${escapeHtml(c.name)}</a>
+                            </div>
+                            <div class="text-xs text-slate-500 truncate max-w-xs">${escapeHtml(c.subject || '')}</div>
+                        </td>
+                        <td class="py-3.5 px-3 whitespace-nowrap">
+                            <span class="text-xs font-semibold px-2 py-0.5 rounded ${c.campaign_type === 'SURVEY_REMINDER' ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-700'}">
+                                ${c.campaign_type === 'SURVEY_REMINDER' ? 'Survey + Reminders' : 'Standard'}
+                            </span>
+                        </td>
+                        <td class="py-3.5 px-3 text-xs text-slate-600">
+                            <div class="font-semibold text-slate-800">${escapeHtml(c.sender_name || '')}</div>
+                            <div class="text-slate-400 text-[11px] truncate max-w-[160px]">${escapeHtml(c.sender_email || '')}</div>
+                        </td>
+                        <td class="py-3.5 px-3 text-xs text-slate-600">
+                            ${(c.odk_dataset_name || c.odk_form_name) ? `<span class="bg-emerald-50 text-emerald-700 font-semibold px-2 py-0.5 rounded text-[11px] truncate max-w-[140px] inline-block">${escapeHtml(c.odk_dataset_name || c.odk_form_name)}</span>` : '<span class="text-slate-400">None</span>'}
+                        </td>
+                        <td class="py-3.5 px-3 text-center">
+                            <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                                c.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' :
+                                (c.status === 'PAUSED' ? 'bg-amber-100 text-amber-700' :
+                                (c.status === 'DRAFT' ? 'bg-slate-100 text-slate-600' : 'bg-blue-100 text-blue-700'))
+                            }">
+                                ${c.status}
+                            </span>
+                        </td>
+                        <td class="py-3.5 px-3 text-xs text-slate-600 whitespace-nowrap">
+                            ${c.reminder_config && c.reminder_config.next_run_at ? new Date(c.reminder_config.next_run_at).toLocaleDateString() : (c.reminder_config && c.reminder_config.enabled ? 'Enabled' : 'Disabled')}
+                        </td>
+                        <td class="py-3.5 px-3.5 text-right whitespace-nowrap">
+                            <div class="inline-flex items-center gap-1.5 justify-end">
+                                <a href="/campaigns/${c.id}/report/" class="h-8 px-2.5 inline-flex items-center gap-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg transition-all shadow-2xs hover:border-slate-300" title="View campaign analytics and report">
+                                    <i data-lucide="bar-chart-2" class="w-3.5 h-3.5 text-blue-600"></i>
+                                    <span>Report</span>
+                                </a>
+                                ${(c.status === 'DRAFT' || c.status === 'SCHEDULED') ? `
+                                    <a href="/campaigns/${c.id}/edit/?step=8&mode=send" class="h-8 px-2.5 inline-flex items-center gap-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg transition-all shadow-2xs hover:border-slate-300" title="Review & Send / Schedule">
+                                        <i data-lucide="send" class="w-3.5 h-3.5 text-emerald-600"></i>
+                                        <span>Send</span>
+                                    </a>
+                                ` : ''}
+                                <button type="button" onclick="openReminderModal(${c.id}, '${escapeHtml(c.name)}', '${escapeHtml(c.odk_dataset_name || c.odk_form_name || 'None')}', '${escapeHtml(c.subject || c.name)}')" class="h-8 px-2.5 inline-flex items-center gap-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg transition-all shadow-2xs hover:border-slate-300" title="Sync ODK Entity List & Schedule/Send Reminder to Unused Contacts">
+                                    <i data-lucide="bell" class="w-3.5 h-3.5 text-indigo-600"></i>
+                                    <span>Reminder</span>
+                                </button>
+                                <button type="button" onclick="promptCampaignEdit(${c.id}, '${escapeHtml(c.name)}')" class="h-8 px-2.5 inline-flex items-center gap-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg transition-all shadow-2xs hover:border-slate-300" title="Edit campaign (Save as Draft vs Save & Send)">
+                                    <i data-lucide="edit-3" class="w-3.5 h-3.5 text-slate-600"></i>
+                                    <span>Edit</span>
+                                </button>
+
+                                <button type="button" onclick="duplicateSingleCampaign(${c.id}, '${escapeHtml(c.name)}')" class="h-8 px-2.5 inline-flex items-center gap-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg transition-all shadow-2xs hover:border-slate-300" title="Duplicate campaign">
+                                    <i data-lucide="copy" class="w-3.5 h-3.5 text-slate-500"></i>
+                                    <span>Duplicate</span>
+                                </button>
+                                ${c.status === 'ACTIVE' ? `
+                                    <button type="button" onclick="pauseCampaign(${c.id})" class="h-8 px-2.5 inline-flex items-center gap-1.5 border border-amber-200 bg-white hover:bg-amber-50 text-amber-700 text-xs font-bold rounded-lg transition-all shadow-2xs" title="Pause campaign">
+                                        <i data-lucide="pause" class="w-3.5 h-3.5 text-amber-500"></i>
+                                        <span>Pause</span>
+                                    </button>
+                                ` : ''}
+                                ${c.status === 'PAUSED' ? `
+                                    <button type="button" onclick="resumeCampaign(${c.id})" class="h-8 px-2.5 inline-flex items-center gap-1.5 border border-emerald-200 bg-white hover:bg-emerald-50 text-emerald-700 text-xs font-bold rounded-lg transition-all shadow-2xs" title="Resume campaign">
+                                        <i data-lucide="play" class="w-3.5 h-3.5 text-emerald-500"></i>
+                                        <span>Resume</span>
+                                    </button>
+                                ` : ''}
+                                <button type="button" onclick="deleteSingleCampaign(${c.id}, '${escapeHtml(c.name)}')" class="h-8 px-2.5 inline-flex items-center gap-1.5 border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 text-xs font-bold rounded-lg transition-all shadow-2xs" title="Delete campaign">
+                                    <i data-lucide="trash-2" class="w-3.5 h-3.5 text-rose-500"></i>
+                                    <span>Delete</span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            renderPagination({
+                containerId: 'campaigns-pagination-container',
+                totalCount: totalCount,
+                currentPage: currentPage,
+                pageSize: currentCampaignPageSize,
+                totalPages: totalPages,
+                onPageChange: 'changeCampaignsPage',
+                onPageSizeChange: 'changeCampaignsPageSize'
+            });
+
+            updateBulkBar();
+            lucide.createIcons();
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    // ─── Checkbox & Bulk Actions ───────────────────────────────────────────────
+    function onCampaignCheckChange(id, checked) {
+        if (checked) {
+            selectedCampaignIds.add(id);
+        } else {
+            selectedCampaignIds.delete(id);
+        }
+        updateBulkBar();
+    }
+
+    function toggleSelectAllCampaigns(checked) {
+        loadedCampaigns.forEach(c => {
+            if (checked) {
+                selectedCampaignIds.add(c.id);
+            } else {
+                selectedCampaignIds.delete(c.id);
+            }
+        });
+        document.querySelectorAll('.campaign-cb').forEach(cb => cb.checked = checked);
+        updateBulkBar();
+    }
+
+    function clearCampaignSelections() {
+        selectedCampaignIds.clear();
+        document.querySelectorAll('.campaign-cb').forEach(cb => cb.checked = false);
+        const masterCb = document.getElementById('check-all-campaigns');
+        if (masterCb) masterCb.checked = false;
+        updateBulkBar();
+    }
+
+    function updateBulkBar() {
+        const bar = document.getElementById('campaigns-bulk-bar');
+        const countText = document.getElementById('selected-campaigns-count');
+        const count = selectedCampaignIds.size;
+
+        if (count > 0) {
+            bar.classList.remove('hidden');
+            countText.textContent = `${count} campaign${count > 1 ? 's' : ''} selected`;
+        } else {
+            bar.classList.add('hidden');
+            document.getElementById('duplicate-detected-note').textContent = '';
+        }
+
+        // Sync master checkbox state
+        const masterCb = document.getElementById('check-all-campaigns');
+        if (masterCb && loadedCampaigns.length > 0) {
+            masterCb.checked = loadedCampaigns.every(c => selectedCampaignIds.has(c.id));
+        }
+    }
+
+    // ─── Create Duplicate Campaign(s) ─────────────────────────────────────────
+    async function createDuplicateCampaigns() {
+        const ids = Array.from(selectedCampaignIds);
+        if (ids.length === 0) {
+            showToast('Please tick at least one campaign to duplicate.', 'warning');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/campaigns/bulk-duplicate/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ ids: ids })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Campaign duplicated successfully!', 'success');
+                clearCampaignSelections();
+                loadCampaigns();
+            } else {
+                alert('Failed to duplicate: ' + (data.error || ''));
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Error duplicating campaign: ' + err.message);
+        }
+    }
+
+    async function duplicateSingleCampaign(id, name) {
+        if (!confirm(`Create a duplicate copy of campaign '${name}'?`)) return;
+
+        try {
+            const res = await fetch(`/api/campaigns/${id}/duplicate/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                }
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || `Campaign '${name}' duplicated successfully!`, 'success');
+                loadCampaigns();
+            } else {
+                alert('Failed to duplicate: ' + (data.error || ''));
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Error duplicating campaign: ' + err.message);
+        }
+    }
+
+    // ─── Bulk Delete ───────────────────────────────────────────────────────────
+    async function executeBulkDeleteCampaigns() {
+        const ids = Array.from(selectedCampaignIds);
+        if (ids.length === 0) return;
+
+        if (!confirm(`Are you sure you want to permanently delete these ${ids.length} selected campaign(s)? All messages, reminder setups, and logs for them will be removed.`)) {
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/campaigns/bulk-delete/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ ids: ids })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                showToast(data.message || 'Campaigns deleted successfully', 'success');
+                selectedCampaignIds.clear();
+                loadCampaigns(currentCampaignPage);
+            } else {
+                const err = await res.json();
+                showToast(err.error || 'Failed to delete campaigns', 'error');
+            }
+        } catch (err) {
+            console.error(err);
+            showToast('Error deleting campaigns', 'error');
+        }
+    }
+
+    // ─── Single Delete ─────────────────────────────────────────────────────────
+    async function deleteSingleCampaign(id, name) {
+        if (!confirm(`Delete campaign "${name}"? This action cannot be undone.`)) return;
+        try {
+            const res = await fetch(`/api/campaigns/${id}/`, {
+                method: 'DELETE',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            });
+            if (res.ok) {
+                showToast(`Campaign "${name}" deleted`, 'success');
+                selectedCampaignIds.delete(id);
+                loadCampaigns(currentCampaignPage);
+            } else {
+                showToast('Failed to delete campaign', 'error');
+            }
+        } catch (err) {
+            console.error(err);
+            showToast('Error deleting campaign', 'error');
+        }
+    }
+
+    // ─── Quick Rename Modal ────────────────────────────────────────────────────
+    function openRenameModal(id, currentName) {
+        document.getElementById('rename-campaign-id').value = id;
+        document.getElementById('rename-campaign-name').value = currentName;
+        document.getElementById('rename-campaign-modal').classList.remove('hidden');
+        document.getElementById('rename-campaign-name').focus();
+    }
+
+    function closeRenameModal() {
+        document.getElementById('rename-campaign-modal').classList.add('hidden');
+    }
+
+    async function submitRenameCampaign(e) {
+        e.preventDefault();
+        const id = document.getElementById('rename-campaign-id').value;
+        const newName = document.getElementById('rename-campaign-name').value.trim();
+        if (!newName) return;
+
+        try {
+            const res = await fetch(`/api/campaigns/${id}/`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ name: newName })
+            });
+
+            if (res.ok) {
+                showToast('Campaign name updated', 'success');
+                closeRenameModal();
+                loadCampaigns(currentCampaignPage);
+            } else {
+                const err = await res.json();
+                alert('Error updating campaign: ' + JSON.stringify(err));
+            }
+        } catch (err) {
+            console.error(err);
+            showToast('Error saving campaign name', 'error');
+        }
+    }
+
+    async function pauseCampaign(id) {
+        await fetch(`/api/campaigns/${id}/pause/`, { method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
+        showToast('Campaign paused');
+        loadCampaigns(currentCampaignPage);
+    }
+
+    async function resumeCampaign(id) {
+        await fetch(`/api/campaigns/${id}/resume/`, { method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
+        showToast('Campaign resumed');
+        loadCampaigns(currentCampaignPage);
+    }
+
+    // ─── Row Action Dropdown Menu (Brevo / Stripe style) ──────────────────────
+    function toggleActionDropdown(id, event) {
+        if (event) event.stopPropagation();
+        const menu = document.getElementById(`action-menu-${id}`);
+        const btn = event ? event.currentTarget : null;
+        const isHidden = menu ? menu.classList.contains('hidden') : true;
+        closeAllActionDropdowns();
+        if (menu && isHidden) {
+            // Smart direction: if not enough space below, open upward (already CSS bottom-full)
+            // Remove any leftover inline top/bottom overrides
+            menu.style.top = '';
+            menu.style.bottom = '';
+            menu.classList.remove('hidden');
+            if (window.lucide) lucide.createIcons();
+        }
+    }
+
+    function closeAllActionDropdowns() {
+        document.querySelectorAll('.action-dropdown-menu').forEach(m => m.classList.add('hidden'));
+    }
+
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.action-dropdown-menu') && !e.target.closest('[id^="action-dropdown-wrap-"]')) {
+            closeAllActionDropdowns();
+        }
+    });
+
+    // ─── Edit Campaign Choice Modal (Draft vs Send) ────────────────────────────
+    let editChoiceCampaignId = null;
+
+    function promptCampaignEdit(id, name) {
+        editChoiceCampaignId = id;
+        const nameEl = document.getElementById('edit-choice-campaign-name');
+        if (nameEl) nameEl.textContent = name || `Campaign #${id}`;
+        document.getElementById('edit-campaign-modal').classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function closeEditCampaignModal() {
+        document.getElementById('edit-campaign-modal').classList.add('hidden');
+        editChoiceCampaignId = null;
+    }
+
+    function proceedEditCampaign(mode) {
+        if (!editChoiceCampaignId) return;
+        if (mode === 'send') {
+            window.location.href = `/campaigns/${editChoiceCampaignId}/edit/?step=8&mode=send`;
+        } else {
+            window.location.href = `/campaigns/${editChoiceCampaignId}/edit/?mode=draft`;
+        }
+    }
+
+    // ─── Manual Reminder Trigger & Schedule ────────────────────────────────────
+    let activeReminderCampaignId = null;
+
+    function onReminderModeChange() {
+        const selectedMode = document.querySelector('input[name="rem_send_mode"]:checked')?.value || 'now';
+        const dateContainer = document.getElementById('rem-schedule-datetime-container');
+        const batchContainer = document.getElementById('rem-batch-settings-container');
+        const btnLabel = document.getElementById('rem-btn-label');
+
+        if (dateContainer) {
+            if (selectedMode === 'schedule') {
+                dateContainer.classList.remove('hidden');
+            } else {
+                dateContainer.classList.add('hidden');
+            }
+        }
+
+        if (batchContainer) {
+            if (selectedMode === 'batches') {
+                batchContainer.classList.remove('hidden');
+            } else {
+                batchContainer.classList.add('hidden');
+            }
+        }
+
+        if (btnLabel) {
+            if (selectedMode === 'schedule') {
+                btnLabel.textContent = 'Schedule Reminder';
+            } else if (selectedMode === 'batches') {
+                btnLabel.textContent = 'Launch Reminder in Batches';
+            } else {
+                btnLabel.textContent = 'Check ODK & Send Reminder Now';
+            }
+        }
+
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function openReminderModal(id, name, odkName, subject) {
+        activeReminderCampaignId = id;
+        document.getElementById('rem-modal-campaign-name').textContent = name;
+        document.getElementById('rem-modal-odk-name').textContent = odkName;
+        
+        let remSubj = (subject || name || '').trim();
+        if (!remSubj.toLowerCase().includes('[reminder]') && !remSubj.toLowerCase().includes('reminder:')) {
+            remSubj = `${remSubj} [Reminder]`;
+        }
+        document.getElementById('rem-modal-subject').value = remSubj;
+
+        // Reset mode radios to "now"
+        const nowRadio = document.querySelector('input[name="rem_send_mode"][value="now"]');
+        if (nowRadio) nowRadio.checked = true;
+
+        // Initialize datetime min to now + 5 mins
+        const dtInput = document.getElementById('rem-schedule-datetime');
+        if (dtInput) {
+            const now = new Date();
+            now.setMinutes(now.getMinutes() + 5);
+            dtInput.min = now.toISOString().slice(0, 16);
+            dtInput.value = now.toISOString().slice(0, 16);
+        }
+
+        onReminderModeChange();
+
+        const statusBox = document.getElementById('rem-modal-status-box');
+        statusBox.className = 'hidden p-3 rounded-xl text-xs';
+        statusBox.textContent = '';
+        const btn = document.getElementById('btn-confirm-reminder');
+        btn.disabled = false;
+        
+        document.getElementById('trigger-reminder-modal').classList.remove('hidden');
+        lucide.createIcons();
+    }
+
+    function closeReminderModal() {
+        document.getElementById('trigger-reminder-modal').classList.add('hidden');
+        activeReminderCampaignId = null;
+    }
+
+    async function executeSendReminder() {
+        if (!activeReminderCampaignId) return;
+        const btn = document.getElementById('btn-confirm-reminder');
+        const statusBox = document.getElementById('rem-modal-status-box');
+        const remSubjInput = document.getElementById('rem-modal-subject');
+        const customSubject = remSubjInput ? remSubjInput.value.trim() : '';
+
+        const selectedMode = document.querySelector('input[name="rem_send_mode"]:checked')?.value || 'now';
+        const payload = {
+            subject: customSubject,
+            send_mode: selectedMode
+        };
+
+        if (selectedMode === 'schedule') {
+            const dtVal = document.getElementById('rem-schedule-datetime')?.value;
+            if (!dtVal) {
+                alert('Please select a date and time to schedule the reminder.');
+                return;
+            }
+            payload.scheduled_at = new Date(dtVal).toISOString();
+        } else if (selectedMode === 'batches') {
+            payload.batch_size = parseInt(document.getElementById('rem-batch-size')?.value || 50);
+            payload.batch_interval_minutes = parseInt(document.getElementById('rem-batch-interval')?.value || 30);
+        }
+
+        btn.disabled = true;
+        const origBtnHtml = btn.innerHTML;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> Processing...`;
+        statusBox.className = 'p-3 rounded-xl text-xs bg-slate-100 text-slate-700 block';
+        statusBox.textContent = selectedMode === 'schedule'
+            ? 'Scheduling reminder in system...'
+            : 'Syncing ODK entity list, detecting USED contacts, and dispatching reminder to UNUSED contacts...';
+
+        try {
+            const res = await fetch(`/api/campaigns/${activeReminderCampaignId}/send-reminder/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (res.ok) {
+                statusBox.className = 'p-3 rounded-xl text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 block';
+                statusBox.innerHTML = `<strong>Success:</strong> ${escapeHtml(data.message)}`;
+                showToast(data.message, 'success');
+                btn.innerHTML = `Dispatched!`;
+                setTimeout(() => {
+                    closeReminderModal();
+                    loadCampaigns(currentCampaignPage);
+                }, 2000);
+            } else {
+                statusBox.className = 'p-3 rounded-xl text-xs bg-rose-50 text-rose-800 border border-rose-200 block';
+                statusBox.innerHTML = `<strong>Failed:</strong> ${escapeHtml(data.error || 'Unknown error occurred.')}`;
+                btn.disabled = false;
+                btn.innerHTML = origBtnHtml;
+                lucide.createIcons();
+            }
+        } catch (err) {
+            console.error(err);
+            statusBox.className = 'p-3 rounded-xl text-xs bg-rose-50 text-rose-800 border border-rose-200 block';
+            statusBox.innerHTML = `<strong>Network Error:</strong> ${escapeHtml(err.message)}`;
+            btn.disabled = false;
+            btn.innerHTML = origBtnHtml;
+            lucide.createIcons();
+        }
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    loadCampaigns(1);
+</script>
+{% endblock %}

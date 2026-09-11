@@ -1,0 +1,879 @@
+{% extends "base.html" %}
+
+{% block page_title %}Contact Groups & Lists{% endblock %}
+
+{% block header_actions %}
+<button onclick="openCreateGroupModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-xl shadow-md shadow-blue-500/20 flex items-center gap-2 transition-all">
+    <i data-lucide="plus" class="w-4 h-4"></i>
+    New Group
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="groups-grid">
+        <div class="col-span-full py-12 text-center text-slate-400">Loading contact groups...</div>
+    </div>
+    <!-- Pagination Container -->
+    <div id="groups-pagination-container" class="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden"></div>
+</div>
+
+<!-- Create Group Modal -->
+<div id="group-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+            <div class="flex items-center gap-2.5">
+                <div class="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                    <i data-lucide="folder-plus" class="w-5 h-5"></i>
+                </div>
+                <h3 class="text-base font-bold text-slate-900">Create Contact Group</h3>
+            </div>
+            <button onclick="closeCreateGroupModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <form onsubmit="submitCreateGroup(event)" class="space-y-4 pt-4 text-sm">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Group Name *</label>
+                <input type="text" id="group-name" required placeholder="e.g. Pulse Survey 2026 or Islamabad Cohort" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Description</label>
+                <textarea id="group-desc" rows="3" placeholder="Optional details about this respondent cohort or survey sample" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+            </div>
+            <div class="pt-4 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onclick="closeCreateGroupModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50">Cancel</button>
+                <button type="submit" id="btn-save-group" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all">Create Group</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Group Modal -->
+<div id="edit-group-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+            <div class="flex items-center gap-2.5">
+                <div class="p-2 bg-amber-50 text-amber-600 rounded-xl">
+                    <i data-lucide="edit" class="w-5 h-5"></i>
+                </div>
+                <h3 class="text-base font-bold text-slate-900">Edit Contact Group</h3>
+            </div>
+            <button onclick="closeEditGroupModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <form onsubmit="submitEditGroup(event)" class="space-y-4 pt-4 text-sm">
+            <input type="hidden" id="edit-group-id">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Group Name *</label>
+                <input type="text" id="edit-group-name" required class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Description</label>
+                <textarea id="edit-group-desc" rows="3" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+            </div>
+            <div class="pt-4 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onclick="closeEditGroupModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50">Cancel</button>
+                <button type="submit" id="btn-update-group" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Delete Group Confirmation Modal -->
+<div id="delete-group-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+            <div class="flex items-center gap-2.5">
+                <div class="p-2 bg-rose-100 text-rose-600 rounded-xl">
+                    <i data-lucide="trash-2" class="w-5 h-5"></i>
+                </div>
+                <h3 class="text-base font-bold text-slate-900">Delete Contact Group</h3>
+            </div>
+            <button onclick="closeDeleteGroupModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+
+        <div class="py-4 space-y-4 text-sm">
+            <p class="text-slate-600 leading-relaxed">
+                Are you sure you want to delete <span id="del-group-title" class="font-bold text-slate-900"></span>?
+            </p>
+
+            <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs font-semibold">
+                <span class="text-slate-600">Contacts currently in this group:</span>
+                <span id="del-group-contacts-badge" class="px-2.5 py-1 bg-blue-100 text-blue-700 font-bold rounded-lg">0 contacts</span>
+            </div>
+
+            <!-- Optional: also delete contacts checkbox -->
+            <div class="p-3.5 bg-rose-50/70 border border-rose-200/80 rounded-2xl">
+                <label class="flex items-start gap-2.5 cursor-pointer select-none">
+                    <input type="checkbox" id="del-also-contacts-check" class="mt-0.5 rounded text-rose-600 focus:ring-rose-500 border-slate-300">
+                    <div>
+                        <span class="font-bold text-rose-950 text-xs block">Also delete all contacts in this group</span>
+                        <p class="text-rose-700/80 text-[11px] mt-0.5 leading-relaxed">
+                            If unchecked, only this group tag is removed; all contacts remain safely saved under "All Contacts".
+                        </p>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <div class="pt-4 flex justify-end gap-2 border-t border-slate-100">
+            <button type="button" onclick="closeDeleteGroupModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50">Cancel</button>
+            <button type="button" id="btn-confirm-delete-group" onclick="executeDeleteGroup()" class="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-md shadow-rose-600/20 transition-all flex items-center gap-2">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                Delete Group
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ Manage Group Custom Fields Modal ═══════════════════════════════════════ -->
+<div id="fields-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-100 flex flex-col max-h-[90vh]">
+        <!-- Header -->
+        <div class="flex items-center justify-between p-6 border-b border-slate-100 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-violet-50 text-violet-600 rounded-xl">
+                    <i data-lucide="layout-list" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-slate-900">Custom Fields</h3>
+                    <p class="text-xs text-slate-500" id="fields-modal-group-name">Group Name</p>
+                </div>
+            </div>
+            <button onclick="closeFieldsModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+
+        <!-- Body: Existing Fields + Add New -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-4">
+            <!-- Info Banner -->
+            <div class="p-3 bg-violet-50 border border-violet-200/60 rounded-2xl text-xs text-violet-800 flex items-start gap-2">
+                <i data-lucide="info" class="w-4 h-4 flex-shrink-0 mt-0.5 text-violet-500"></i>
+                <span>
+                    Custom fields are <b>group-specific</b>. Toggle <b>Active</b> to show a field as a column in the contacts table and in add/edit contact forms.
+                    Inactive fields are saved but hidden from view.
+                </span>
+            </div>
+
+            <!-- Field Status Legend -->
+            <div class="flex items-center gap-4 px-1">
+                <div class="flex items-center gap-1.5 text-xs text-emerald-700 font-semibold">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span> Active — visible in contacts table &amp; forms
+                </div>
+                <div class="flex items-center gap-1.5 text-xs text-slate-400 font-semibold">
+                    <span class="w-2 h-2 rounded-full bg-slate-300 inline-block"></span> Inactive — saved, but hidden
+                </div>
+            </div>
+
+            <!-- Existing Fields List -->
+            <div id="fields-list" class="space-y-2">
+                <div class="py-8 text-center text-slate-400 text-sm">Loading fields...</div>
+            </div>
+
+            <!-- Divider -->
+            <div class="border-t border-slate-100 pt-4">
+                <h4 class="text-xs font-extrabold uppercase text-slate-500 mb-3 tracking-wider flex items-center gap-2">
+                    <i data-lucide="plus-circle" class="w-3.5 h-3.5 text-violet-500"></i>
+                    Add New Field
+                </h4>
+                <form id="add-field-form" onsubmit="submitAddField(event)" class="space-y-3">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1">Field Name *</label>
+                            <input type="text" id="new-field-name" required placeholder="e.g. District, Age, Tribe" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1">Field Type</label>
+                            <select id="new-field-type" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500">
+                                <option value="TEXT">Text</option>
+                                <option value="NUMBER">Number</option>
+                                <option value="DATE">Date</option>
+                                <option value="BOOLEAN">Boolean (Yes/No)</option>
+                                <option value="EMAIL">Email</option>
+                                <option value="PHONE">Phone</option>
+                                <option value="URL">URL</option>
+                                <option value="SELECT">Dropdown Select</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Description <span class="font-normal text-slate-400">(optional)</span></label>
+                        <input type="text" id="new-field-desc" placeholder="Helpful hint for data entry" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500">
+                    </div>
+                    <!-- Options (only for SELECT type) -->
+                    <div id="new-field-options-wrap" class="hidden">
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Options <span class="font-normal text-slate-400">(comma-separated)</span></label>
+                        <input type="text" id="new-field-options" placeholder="e.g. Punjab, Sindh, KPK, Balochistan" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500">
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="new-field-required" class="rounded text-violet-600">
+                        <label for="new-field-required" class="text-xs text-slate-600 font-semibold cursor-pointer">Required field</label>
+                    </div>
+                    <div class="flex justify-end">
+                        <button type="submit" id="btn-add-field" class="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white font-bold text-sm rounded-xl shadow-md shadow-violet-600/20 flex items-center gap-2 transition-all">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            Add Field
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Field Modal -->
+<div id="edit-field-modal" class="hidden fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+            <h3 class="text-base font-bold text-slate-900">Edit Field</h3>
+            <button onclick="closeEditFieldModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <form id="edit-field-form" onsubmit="submitEditField(event)" class="space-y-4 pt-4 text-sm">
+            <input type="hidden" id="edit-field-id">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Field Name *</label>
+                    <input type="text" id="edit-field-name" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Field Type</label>
+                    <select id="edit-field-type" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500">
+                        <option value="TEXT">Text</option>
+                        <option value="NUMBER">Number</option>
+                        <option value="DATE">Date</option>
+                        <option value="BOOLEAN">Boolean (Yes/No)</option>
+                        <option value="EMAIL">Email</option>
+                        <option value="PHONE">Phone</option>
+                        <option value="URL">URL</option>
+                        <option value="SELECT">Dropdown Select</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-600 mb-1">Description</label>
+                <input type="text" id="edit-field-desc" placeholder="Helpful hint" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500">
+            </div>
+            <div id="edit-field-options-wrap" class="hidden">
+                <label class="block text-xs font-bold text-slate-600 mb-1">Options <span class="font-normal text-slate-400">(comma-separated)</span></label>
+                <input type="text" id="edit-field-options" placeholder="e.g. Punjab, Sindh, KPK, Balochistan" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500">
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="edit-field-required" class="rounded text-violet-600">
+                <label for="edit-field-required" class="text-xs text-slate-600 font-semibold cursor-pointer">Required field</label>
+            </div>
+            <div class="pt-4 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onclick="closeEditFieldModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50">Cancel</button>
+                <button type="submit" class="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl shadow-md transition-all">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<style>
+    .field-type-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .field-type-text { background: #eff6ff; color: #1d4ed8; }
+    .field-type-number { background: #fef3c7; color: #92400e; }
+    .field-type-date { background: #ecfdf5; color: #065f46; }
+    .field-type-boolean { background: #fdf4ff; color: #7e22ce; }
+    .field-type-email { background: #fff1f2; color: #be123c; }
+    .field-type-phone { background: #f0fdf4; color: #15803d; }
+    .field-type-url { background: #f0f9ff; color: #0369a1; }
+    .field-type-select { background: #fef9c3; color: #713f12; }
+
+    /* Toggle Switch */
+    .toggle-switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #cbd5e1; border-radius: 22px; transition: 0.25s; }
+    .toggle-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.25s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+    .toggle-switch input:checked + .toggle-slider { background: #10b981; }
+    .toggle-switch input:checked + .toggle-slider:before { transform: translateX(18px); }
+
+    /* Inactive field row */
+    .field-row-inactive { opacity: 0.55; }
+    .field-row-inactive:hover { opacity: 0.85; }
+</style>
+
+<script>
+    let activeDeleteGroupId = null;
+    let currentGroupPage = 1;
+    let currentGroupPageSize = 25;
+    let activeFieldsGroupId = null;
+    let activeFieldsGroupName = '';
+    let editingFieldId = null;
+
+    function changeGroupsPage(page) {
+        currentGroupPage = page;
+        loadGroups(currentGroupPage);
+    }
+
+    function changeGroupsPageSize(newSize) {
+        currentGroupPageSize = newSize;
+        currentGroupPage = 1;
+        loadGroups(1);
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    function getFieldTypeBadge(type) {
+        const types = {
+            'TEXT': ['field-type-text', 'text'],
+            'NUMBER': ['field-type-number', 'number'],
+            'DATE': ['field-type-date', 'date'],
+            'BOOLEAN': ['field-type-boolean', 'yes/no'],
+            'EMAIL': ['field-type-email', 'email'],
+            'PHONE': ['field-type-phone', 'phone'],
+            'URL': ['field-type-url', 'url'],
+            'SELECT': ['field-type-select', 'select'],
+        };
+        const [cls, label] = types[type] || ['field-type-text', type];
+        return `<span class="field-type-badge ${cls}">${label}</span>`;
+    }
+
+    async function loadGroups(page = 1) {
+        currentGroupPage = page;
+        try {
+            const res = await fetch(`/api/groups/?page=${currentGroupPage}&page_size=${currentGroupPageSize}`);
+            const data = await res.json();
+            const groups = data.results || (Array.isArray(data) ? data : []);
+            const container = document.getElementById('groups-grid');
+
+            const totalCount = data.count !== undefined ? data.count : groups.length;
+            const totalPages = data.total_pages || Math.ceil(totalCount / currentGroupPageSize) || 1;
+            const currentPage = data.current_page || currentGroupPage;
+
+            if (!groups || groups.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full py-16 text-center bg-white rounded-3xl border border-slate-200/80 shadow-sm p-8">
+                        <div class="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                            <i data-lucide="folder-kanban" class="w-7 h-7"></i>
+                        </div>
+                        <h4 class="font-bold text-slate-800 text-base mb-1">No contact groups yet</h4>
+                        <p class="text-xs text-slate-500 max-w-sm mx-auto mb-5">Group contacts into targeted lists for specific surveys, departments, or reminder cohorts.</p>
+                        <button onclick="openCreateGroupModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-md inline-flex items-center gap-2">
+                            <i data-lucide="plus" class="w-4 h-4"></i> Create First Group
+                        </button>
+                    </div>
+                `;
+                renderPagination({ containerId: 'groups-pagination-container', totalCount: 0 });
+                lucide.createIcons();
+                return;
+            }
+
+            container.innerHTML = groups.map(g => {
+                const safeName = escapeHtml(g.name);
+                const safeDesc = escapeHtml(g.description || '');
+                const fieldCount = (g.custom_fields || []).length;
+
+                return `
+                <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-slate-300 transition-all group">
+                    <div>
+                        <!-- Header with Folder & Action Buttons -->
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="flex items-center gap-3">
+                                <div class="p-2.5 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-sm">
+                                    <i data-lucide="folder" class="w-5 h-5"></i>
+                                </div>
+                                <div>
+                                    <a href="/contacts/?group=${g.id}" class="font-bold text-base text-slate-900 hover:text-blue-600 transition-colors inline-block leading-tight">
+                                        ${safeName}
+                                    </a>
+                                    ${fieldCount > 0 ? `<div class="text-[11px] text-violet-600 font-semibold flex items-center gap-1 mt-0.5"><i data-lucide="layout-list" class="w-3 h-3"></i>${fieldCount} custom field${fieldCount !== 1 ? 's' : ''}</div>` : ''}
+                                </div>
+                            </div>
+
+                            <!-- Actions Menu -->
+                            <div class="flex items-center gap-1">
+                                <a href="/contacts/?group=${g.id}" title="View contacts in this group" class="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors">
+                                    <i data-lucide="users" class="w-4 h-4"></i>
+                                </a>
+                                <button data-id="${g.id}" data-name="${encodeURIComponent(g.name)}" class="btn-manage-fields p-1.5 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition-colors" title="Manage custom fields for this group">
+                                    <i data-lucide="layout-list" class="w-4 h-4"></i>
+                                </button>
+                                <button data-id="${g.id}" data-name="${encodeURIComponent(g.name)}" data-desc="${encodeURIComponent(g.description || '')}" class="btn-trigger-edit p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-colors" title="Edit group">
+                                    <i data-lucide="edit-2" class="w-4 h-4"></i>
+                                </button>
+                                <button data-id="${g.id}" data-name="${encodeURIComponent(g.name)}" data-count="${g.contact_count}" class="btn-trigger-delete p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors" title="Delete group">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <p class="text-xs text-slate-500 mt-3 line-clamp-2 leading-relaxed">${safeDesc || '<span class="italic text-slate-400">No description provided</span>'}</p>
+                    </div>
+
+                    <!-- Footer with Status Metrics & Contact Count -->
+                    <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-xs font-semibold">
+                        <a href="/contacts/?group=${g.id}" class="flex items-baseline gap-1 text-slate-900 hover:text-blue-600 transition-colors">
+                            <span class="text-base font-black text-slate-900">${g.contact_count}</span>
+                            <span class="text-slate-500 font-normal text-[11px]">contacts &rarr;</span>
+                        </a>
+                        <div class="flex gap-1.5">
+                            <span class="px-2 py-0.5 rounded badge-used text-[10px] font-bold">${g.used_count} Used</span>
+                            <span class="px-2 py-0.5 rounded badge-unused text-[10px] font-bold">${g.unused_count} Unused</span>
+                        </div>
+                    </div>
+                </div>
+                `;
+            }).join('');
+
+            renderPagination({
+                containerId: 'groups-pagination-container',
+                totalCount: totalCount,
+                currentPage: currentPage,
+                pageSize: currentGroupPageSize,
+                totalPages: totalPages,
+                onPageChange: 'changeGroupsPage',
+                onPageSizeChange: 'changeGroupsPageSize'
+            });
+
+            lucide.createIcons();
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    // Event Delegation for Edit, Delete, Manage Fields buttons
+    document.addEventListener('click', (e) => {
+        const manageBtn = e.target.closest('.btn-manage-fields');
+        if (manageBtn) {
+            const id = manageBtn.dataset.id;
+            const name = decodeURIComponent(manageBtn.dataset.name);
+            openFieldsModal(id, name);
+            return;
+        }
+
+        const delBtn = e.target.closest('.btn-trigger-delete');
+        if (delBtn) {
+            const id = delBtn.dataset.id;
+            const name = decodeURIComponent(delBtn.dataset.name);
+            const count = parseInt(delBtn.dataset.count || '0');
+            openDeleteGroupModal(id, name, count);
+            return;
+        }
+
+        const editBtn = e.target.closest('.btn-trigger-edit');
+        if (editBtn) {
+            const id = editBtn.dataset.id;
+            const name = decodeURIComponent(editBtn.dataset.name);
+            const desc = decodeURIComponent(editBtn.dataset.desc || '');
+            openEditGroupModal(id, name, desc);
+            return;
+        }
+    });
+
+    // ─── Group Modal open/close handlers ──────────────────────────────────────
+    function openCreateGroupModal() {
+        document.getElementById('group-modal').classList.remove('hidden');
+        document.getElementById('group-name').focus();
+    }
+    function closeCreateGroupModal() {
+        document.getElementById('group-modal').classList.add('hidden');
+    }
+
+    function openEditGroupModal(id, name, desc) {
+        document.getElementById('edit-group-id').value = id;
+        document.getElementById('edit-group-name').value = name;
+        document.getElementById('edit-group-desc').value = desc;
+        document.getElementById('edit-group-modal').classList.remove('hidden');
+        document.getElementById('edit-group-name').focus();
+    }
+    function closeEditGroupModal() {
+        document.getElementById('edit-group-modal').classList.add('hidden');
+    }
+
+    function openDeleteGroupModal(id, name, count) {
+        activeDeleteGroupId = id;
+        document.getElementById('del-group-title').textContent = `"${name}"`;
+        document.getElementById('del-group-contacts-badge').textContent = `${count} contact${count === 1 ? '' : 's'}`;
+        document.getElementById('del-also-contacts-check').checked = false;
+        document.getElementById('delete-group-modal').classList.remove('hidden');
+    }
+    function closeDeleteGroupModal() {
+        activeDeleteGroupId = null;
+        document.getElementById('delete-group-modal').classList.add('hidden');
+    }
+
+    // ─── Custom Fields Modal ──────────────────────────────────────────────────
+    function openFieldsModal(groupId, groupName) {
+        activeFieldsGroupId = groupId;
+        activeFieldsGroupName = groupName;
+        document.getElementById('fields-modal-group-name').textContent = groupName;
+        document.getElementById('fields-modal').classList.remove('hidden');
+        // Reset add form
+        document.getElementById('add-field-form').reset();
+        document.getElementById('new-field-options-wrap').classList.add('hidden');
+        loadGroupFields();
+        lucide.createIcons();
+    }
+
+    function closeFieldsModal() {
+        activeFieldsGroupId = null;
+        document.getElementById('fields-modal').classList.add('hidden');
+        loadGroups(currentGroupPage); // reload group cards to update field count
+    }
+
+    async function loadGroupFields() {
+        if (!activeFieldsGroupId) return;
+        const container = document.getElementById('fields-list');
+        container.innerHTML = '<div class="py-6 text-center text-slate-400 text-sm">Loading...</div>';
+
+        try {
+            const res = await fetch(`/api/groups/${activeFieldsGroupId}/fields/`);
+            const fields = await res.json();
+
+            if (!fields || fields.length === 0) {
+                container.innerHTML = `
+                    <div class="py-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                        <div class="w-10 h-10 bg-violet-50 text-violet-500 rounded-xl flex items-center justify-center mx-auto mb-3">
+                            <i data-lucide="layout-list" class="w-5 h-5"></i>
+                        </div>
+                        <p class="text-sm font-semibold text-slate-600 mb-1">No custom fields yet</p>
+                        <p class="text-xs text-slate-400">Add fields below to collect group-specific contact data.</p>
+                    </div>
+                `;
+                lucide.createIcons();
+                return;
+            }
+
+            container.innerHTML = fields.map((f) => {
+                const isActive = f.is_active;
+                const rowClass = isActive ? '' : 'field-row-inactive';
+                const borderClass = isActive ? 'border-slate-200/80 bg-slate-50' : 'border-slate-200/50 bg-white';
+                const statusPill = isActive
+                    ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-200">
+                            <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block"></span> Active
+                       </span>`
+                    : `<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-bold rounded-full border border-slate-200">
+                            <span class="w-1.5 h-1.5 bg-slate-300 rounded-full inline-block"></span> Inactive
+                       </span>`;
+
+                return `
+                <div id="field-row-${f.id}" class="flex items-center justify-between gap-3 p-3.5 border ${borderClass} rounded-2xl transition-all ${rowClass}">
+                    <div class="flex items-center gap-3 min-w-0 flex-1">
+                        <!-- Active/Inactive Toggle -->
+                        <div class="flex flex-col items-center gap-0.5 flex-shrink-0" title="${isActive ? 'Click to deactivate' : 'Click to activate'}">
+                            <label class="toggle-switch">
+                                <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleFieldActive(${f.id}, this)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+
+                        <!-- Field Info -->
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="font-bold text-sm text-slate-900">${escapeHtml(f.name)}</span>
+                                ${getFieldTypeBadge(f.field_type)}
+                                ${statusPill}
+                                ${f.is_required ? '<span class="px-1.5 py-0.5 bg-rose-50 text-rose-600 text-[10px] font-bold rounded border border-rose-200">Required</span>' : ''}
+                            </div>
+                            <div class="flex items-center gap-2 mt-0.5">
+                                <span class="text-[11px] text-slate-400 font-mono">&#123;&#123; ${escapeHtml(f.slug)} &#125;&#125;</span>
+                                ${f.description ? `<span class="text-[11px] text-slate-500">— ${escapeHtml(f.description)}</span>` : ''}
+                            </div>
+                            ${f.options && f.options.length > 0 ? `<div class="mt-1 text-[10px] text-slate-400">Options: ${f.options.map(o => escapeHtml(o)).join(', ')}</div>` : ''}
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex items-center gap-1 flex-shrink-0">
+                        <button onclick="openEditFieldModal(${f.id}, ${JSON.stringify(f).replace(/</g,'&lt;')})" class="p-1.5 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors" title="Edit field">
+                            <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <button onclick="deleteField(${f.id}, '${escapeHtml(f.name)}')" class="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Delete field">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </div>
+            `}).join('');
+            lucide.createIcons();
+        } catch (err) {
+            container.innerHTML = `<div class="py-4 text-center text-rose-500 text-sm">Failed to load fields.</div>`;
+            console.error(err);
+        }
+    }
+
+    async function toggleFieldActive(fieldId, checkboxEl) {
+        const row = document.getElementById(`field-row-${fieldId}`);
+        checkboxEl.disabled = true;
+
+        try {
+            const res = await fetch(`/api/groups/${activeFieldsGroupId}/fields/${fieldId}/toggle/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() }
+            });
+            if (!res.ok) throw new Error('Toggle failed');
+            const data = await res.json();
+
+            // Update the row appearance immediately
+            const isActive = data.is_active;
+            if (row) {
+                row.classList.toggle('field-row-inactive', !isActive);
+                if (isActive) {
+                    row.classList.remove('border-slate-200/50', 'bg-white');
+                    row.classList.add('border-slate-200/80', 'bg-slate-50');
+                } else {
+                    row.classList.remove('border-slate-200/80', 'bg-slate-50');
+                    row.classList.add('border-slate-200/50', 'bg-white');
+                }
+                // Update status pill
+                const pillEl = row.querySelector('.status-pill');
+                if (pillEl) {
+                    pillEl.innerHTML = isActive
+                        ? `<span class="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block"></span> Active`
+                        : `<span class="w-1.5 h-1.5 bg-slate-300 rounded-full inline-block"></span> Inactive`;
+                    pillEl.className = `status-pill inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-full border ${isActive ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`;
+                }
+            }
+            showToast(data.message || (isActive ? 'Field activated' : 'Field deactivated'));
+        } catch (err) {
+            // Revert checkbox on error
+            checkboxEl.checked = !checkboxEl.checked;
+            showToast('Failed to update field status', 'error');
+            console.error(err);
+        } finally {
+            checkboxEl.disabled = false;
+        }
+    }
+
+
+    // Toggle options input for SELECT type
+    document.getElementById('new-field-type').addEventListener('change', function() {
+        document.getElementById('new-field-options-wrap').classList.toggle('hidden', this.value !== 'SELECT');
+    });
+    document.getElementById('edit-field-type').addEventListener('change', function() {
+        document.getElementById('edit-field-options-wrap').classList.toggle('hidden', this.value !== 'SELECT');
+    });
+
+    async function submitAddField(e) {
+        e.preventDefault();
+        const btn = document.getElementById('btn-add-field');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="animate-spin">⏳</span> Adding...';
+
+        const type = document.getElementById('new-field-type').value;
+        const optionsRaw = document.getElementById('new-field-options').value;
+        const options = type === 'SELECT' ? optionsRaw.split(',').map(o => o.trim()).filter(Boolean) : [];
+
+        const payload = {
+            name: document.getElementById('new-field-name').value.trim(),
+            field_type: type,
+            description: document.getElementById('new-field-desc').value.trim(),
+            options: options,
+            is_required: document.getElementById('new-field-required').checked,
+        };
+
+        try {
+            const res = await fetch(`/api/groups/${activeFieldsGroupId}/fields/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                showToast(`Field "${payload.name}" added`);
+                document.getElementById('add-field-form').reset();
+                document.getElementById('new-field-options-wrap').classList.add('hidden');
+                loadGroupFields();
+            } else {
+                const err = await res.json();
+                alert('Error: ' + JSON.stringify(err));
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Failed to add field');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="plus" class="w-4 h-4"></i> Add Field';
+            lucide.createIcons();
+        }
+    }
+
+    function openEditFieldModal(fieldId, fieldData) {
+        editingFieldId = fieldId;
+        if (typeof fieldData === 'string') fieldData = JSON.parse(fieldData);
+
+        document.getElementById('edit-field-id').value = fieldId;
+        document.getElementById('edit-field-name').value = fieldData.name || '';
+        document.getElementById('edit-field-type').value = fieldData.field_type || 'TEXT';
+        document.getElementById('edit-field-desc').value = fieldData.description || '';
+        document.getElementById('edit-field-required').checked = fieldData.is_required || false;
+
+        const opts = (fieldData.options || []).join(', ');
+        document.getElementById('edit-field-options').value = opts;
+        document.getElementById('edit-field-options-wrap').classList.toggle('hidden', fieldData.field_type !== 'SELECT');
+
+        document.getElementById('edit-field-modal').classList.remove('hidden');
+    }
+
+    function closeEditFieldModal() {
+        editingFieldId = null;
+        document.getElementById('edit-field-modal').classList.add('hidden');
+    }
+
+    async function submitEditField(e) {
+        e.preventDefault();
+        if (!editingFieldId || !activeFieldsGroupId) return;
+
+        const type = document.getElementById('edit-field-type').value;
+        const optionsRaw = document.getElementById('edit-field-options').value;
+        const options = type === 'SELECT' ? optionsRaw.split(',').map(o => o.trim()).filter(Boolean) : [];
+
+        const payload = {
+            name: document.getElementById('edit-field-name').value.trim(),
+            field_type: type,
+            description: document.getElementById('edit-field-desc').value.trim(),
+            options: options,
+            is_required: document.getElementById('edit-field-required').checked,
+        };
+
+        try {
+            const res = await fetch(`/api/groups/${activeFieldsGroupId}/fields/${editingFieldId}/`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                showToast('Field updated');
+                closeEditFieldModal();
+                loadGroupFields();
+            } else {
+                const err = await res.json();
+                alert('Error: ' + JSON.stringify(err));
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Failed to update field');
+        }
+    }
+
+    async function deleteField(fieldId, fieldName) {
+        if (!confirm(`Delete field "${fieldName}"? All values stored for this field will be permanently removed.`)) return;
+        try {
+            const res = await fetch(`/api/groups/${activeFieldsGroupId}/fields/${fieldId}/`, {
+                method: 'DELETE',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            });
+            if (res.ok) {
+                showToast(`Field "${fieldName}" deleted`);
+                loadGroupFields();
+            } else {
+                alert('Failed to delete field');
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    // ─── Group CRUD handlers ──────────────────────────────────────────────────
+    async function submitCreateGroup(e) {
+        e.preventDefault();
+        const btn = document.getElementById('btn-save-group');
+        btn.disabled = true;
+        btn.textContent = 'Creating...';
+
+        const payload = {
+            name: document.getElementById('group-name').value.trim(),
+            description: document.getElementById('group-desc').value.trim(),
+        };
+
+        try {
+            const res = await fetch('/api/groups/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                showToast('Group created successfully');
+                closeCreateGroupModal();
+                document.getElementById('group-name').value = '';
+                document.getElementById('group-desc').value = '';
+                loadGroups();
+            } else {
+                const err = await res.json();
+                alert('Error: ' + JSON.stringify(err));
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Failed to create group');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Create Group';
+        }
+    }
+
+    async function submitEditGroup(e) {
+        e.preventDefault();
+        const btn = document.getElementById('btn-update-group');
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+
+        const id = document.getElementById('edit-group-id').value;
+        const payload = {
+            name: document.getElementById('edit-group-name').value.trim(),
+            description: document.getElementById('edit-group-desc').value.trim(),
+        };
+
+        try {
+            const res = await fetch(`/api/groups/${id}/`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                showToast('Group updated successfully');
+                closeEditGroupModal();
+                loadGroups(currentGroupPage);
+            } else {
+                const err = await res.json();
+                alert('Error: ' + JSON.stringify(err));
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Failed to update group');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Save Changes';
+        }
+    }
+
+    async function executeDeleteGroup() {
+        if (!activeDeleteGroupId) return;
+
+        const btn = document.getElementById('btn-confirm-delete-group');
+        btn.disabled = true;
+        btn.innerHTML = `<span class="animate-spin mr-1">&#9696;</span> Deleting...`;
+
+        const deleteContacts = document.getElementById('del-also-contacts-check').checked;
+        const url = `/api/groups/${activeDeleteGroupId}/?delete_contacts=${deleteContacts ? 'true' : 'false'}`;
+
+        try {
+            const res = await fetch(url, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() }
+            });
+
+            if (res.ok) {
+                const data = await res.json().catch(() => ({}));
+                showToast(data.message || 'Group deleted successfully');
+                closeDeleteGroupModal();
+                loadGroups(currentGroupPage);
+            } else {
+                const err = await res.json().catch(() => ({}));
+                alert('Failed to delete group: ' + (err.detail || err.error || res.statusText));
+            }
+        } catch (err) {
+            console.error(err);
+            alert('An error occurred while deleting the group.');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<i data-lucide="trash-2" class="w-4 h-4"></i> Delete Group`;
+            lucide.createIcons();
+        }
+    }
+
+    loadGroups();
+</script>
+{% endblock %}

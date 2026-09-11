@@ -1,0 +1,1368 @@
+{% extends "base.html" %}
+
+{% block page_title %}All Contacts{% endblock %}
+
+{% block header_actions %}
+<div class="flex items-center gap-2.5 flex-wrap">
+    <!-- Auto-Sync Status Indicator -->
+    <div id="odk-sync-status-indicator" class="hidden sm:flex items-center gap-2 text-xs font-semibold text-slate-600 bg-white border border-slate-200/90 px-3 py-2 rounded-xl shadow-xs" title="ODK Central synchronizes automatically every 5 minutes">
+        <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        </span>
+        <span>Auto-sync: <b class="text-slate-800">5m</b></span>
+        <span class="text-slate-300">|</span>
+        <span id="odk-last-synced-time" class="text-slate-500 font-normal">Ready</span>
+    </div>
+
+    <!-- Manual Sync from ODK Button -->
+    <button id="btn-sync-odk" onclick="syncContactsFromODK()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-semibold text-sm rounded-xl shadow-md shadow-emerald-600/20 flex items-center gap-2 transition-all cursor-pointer" title="Manually synchronize submissions and entity updates from ODK Central">
+        <i data-lucide="refresh-cw" id="sync-odk-icon" class="w-4 h-4 transition-transform"></i>
+        <span id="sync-odk-btn-text">Sync from ODK</span>
+    </button>
+
+    <button onclick="openAddContactModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold text-sm rounded-xl shadow-md shadow-blue-500/20 flex items-center gap-2 transition-all">
+        <i data-lucide="user-plus" class="w-4 h-4"></i>
+        Add Contact
+    </button>
+    <a id="header-btn-import" href="/contacts/import/" class="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-sm rounded-xl flex items-center gap-2 transition-all shadow-sm">
+        <i data-lucide="upload" class="w-4 h-4"></i>
+        Import File
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Group Focus Banner (shown when filtered by group) -->
+    <div id="group-focus-banner" class="hidden bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 border border-blue-200/80 rounded-3xl p-5 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm animate-in fade-in duration-200">
+        <div class="flex items-center gap-3.5 w-full md:w-auto">
+            <div class="p-3 bg-blue-600 text-white rounded-2xl shadow-md shadow-blue-600/25">
+                <i data-lucide="folder-kanban" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <div class="flex items-center gap-2 mb-0.5">
+                    <span class="text-[10px] font-extrabold uppercase text-blue-700 tracking-wider bg-blue-100 px-2 py-0.5 rounded-full">Group View</span>
+                    <span id="group-banner-count" class="text-xs font-bold text-slate-600">0 contacts</span>
+                </div>
+                <h2 id="group-banner-name" class="text-lg font-black text-slate-900 leading-tight">Group Name</h2>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
+            <button onclick="openAddContactModalForGroup()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-600/20 flex items-center gap-1.5 transition-all">
+                <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Add Contact Here
+            </button>
+            <a id="btn-group-import-link" href="/contacts/import/" class="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs rounded-xl shadow-sm flex items-center gap-1.5 transition-all">
+                <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i> Import into this Group
+            </a>
+            <button onclick="clearGroupFilter()" class="px-3 py-2 text-slate-500 hover:text-slate-800 text-xs font-semibold rounded-xl hover:bg-white/60 transition-all">
+                View All &times;
+            </button>
+        </div>
+    </div>
+
+    <!-- Filters & Search Toolbar -->
+    <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
+        <!-- Search -->
+        <div class="relative w-full md:w-80">
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3"></i>
+            <input type="text" id="search-input" placeholder="Search by name, email, JobID..." class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <!-- Filter Dropdowns -->
+        <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+            <select id="filter-status" class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">All Survey Statuses</option>
+                <option value="UNUSED">UNUSED (Pending)</option>
+                <option value="USED">USED (Submitted)</option>
+            </select>
+
+            <select id="filter-group" class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">All Groups</option>
+                {% for g in groups %}
+                <option value="{{ g.id }}">{{ g.name }}</option>
+                {% endfor %}
+            </select>
+
+            <select id="filter-email-status" class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">All Email Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Unsubscribed">Unsubscribed</option>
+                <option value="Hard Bounce">Hard Bounce</option>
+                <option value="Soft Bounce">Soft Bounce</option>
+            </select>
+
+            <select id="filter-source" class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                <option value="">All Sources</option>
+                <option value="ODK_CENTRAL">ODK Central</option>
+                <option value="IMPORT">Excel / CSV</option>
+                <option value="MANUAL">Manual</option>
+            </select>
+
+            <!-- Quick Select All Contacts Button -->
+            <button type="button" onclick="selectAllMatchingContacts()" class="px-3.5 py-2 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm" title="Select all contacts matching current filters">
+                <i data-lucide="check-square" class="w-4 h-4 text-blue-600"></i>
+                <span>Select All (<span id="quick-select-count">0</span>)</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Bulk Actions Bar (hidden until selection) -->
+    <div id="bulk-bar" class="hidden bg-slate-900 text-white px-6 py-3 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-xl animate-in fade-in duration-200">
+        <div class="flex items-center gap-3">
+            <span class="text-xs font-bold bg-blue-600 px-2.5 py-1 rounded-lg" id="selected-count-text">0 contacts selected</span>
+            <button type="button" onclick="clearAllSelections()" class="text-xs text-slate-400 hover:text-white underline">Deselect all</button>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            <select id="bulk-target-group" class="bg-slate-800 text-white border border-slate-700 text-xs px-2.5 py-1.5 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <option value="">-- Add to Group --</option>
+                {% for g in groups %}
+                <option value="{{ g.id }}">{{ g.name }}</option>
+                {% endfor %}
+            </select>
+            <button onclick="applyBulkAddToGroup()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-xs font-bold rounded-lg transition-colors">Assign Group</button>
+            <button onclick="applyBulkAction('mark_used')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-xs font-bold rounded-lg transition-colors">Mark USED</button>
+            <button onclick="applyBulkAction('mark_unused')" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-xs font-bold rounded-lg transition-colors">Mark UNUSED</button>
+            <button onclick="applyBulkAction('unsubscribe')" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-xs font-bold rounded-lg transition-colors">Unsubscribe</button>
+            <button onclick="applyBulkAction('delete')" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-xs font-bold rounded-lg transition-colors">Delete</button>
+        </div>
+    </div>
+
+    <!-- Contacts Table -->
+    <div class="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <!-- Select All Across Pages Banner -->
+        <div id="selection-banner" class="hidden bg-indigo-50 border-b border-indigo-100 px-6 py-2.5 text-xs text-indigo-950 flex items-center justify-between transition-all">
+            <div class="flex items-center gap-2">
+                <i data-lucide="info" class="w-4 h-4 text-indigo-600 flex-shrink-0"></i>
+                <span id="selection-banner-text">All contacts on this page are selected.</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <button type="button" id="btn-banner-select-all" onclick="selectAllMatchingContacts()" class="font-bold text-indigo-700 hover:text-indigo-900 underline">Select all <span id="selection-total-count">0</span> contacts</button>
+                <button type="button" onclick="clearAllSelections()" class="text-slate-500 hover:text-slate-700 underline">Clear selection</button>
+            </div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm">
+                <thead>
+                    <tr class="bg-slate-50/75 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider" id="contacts-thead-row">
+                        <th class="py-3.5 px-4 w-10 text-center"><input type="checkbox" id="select-all" class="rounded text-blue-600"></th>
+                        <th class="py-3.5 px-4">Contact</th>
+                        <th class="py-3.5 px-4">JobID</th>
+                        <th class="py-3.5 px-4">Phone</th>
+                        <th class="py-3.5 px-4 text-center">Survey Status</th>
+                        <th class="py-3.5 px-4 text-center">Email Status</th>
+                        <th class="py-3.5 px-4 text-center">Reminders</th>
+                        <th class="py-3.5 px-4 text-center">Source</th>
+                        <th class="py-3.5 px-4 text-center">Last Updated</th>
+                        <th class="py-3.5 px-4 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="contacts-tbody" class="divide-y divide-slate-100">
+                    <tr><td colspan="10" class="py-8 text-center text-slate-400">Loading contacts...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <!-- Pagination Container -->
+        <div id="contacts-pagination-container"></div>
+    </div>
+</div>
+
+<!-- Add Contact Modal -->
+<div id="add-contact-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-200">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+            <div class="flex items-center gap-2.5">
+                <div class="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                    <i data-lucide="user-plus" class="w-5 h-5"></i>
+                </div>
+                <h3 class="text-base font-bold text-slate-900">Add New Contact</h3>
+            </div>
+            <button onclick="closeAddContactModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <form id="add-contact-form" class="space-y-4 pt-4 text-sm" onsubmit="submitAddContact(event)">
+            <!-- Group Assignment Selector -->
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Assign to Contact Group</label>
+                <select id="add-group-id" onchange="onAddGroupChange()" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                    <option value="">-- No specific group (All Contacts only) --</option>
+                    {% for g in groups %}
+                    <option value="{{ g.id }}">{{ g.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">First Name</label>
+                    <input type="text" id="add-first-name" placeholder="e.g. John" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Last Name</label>
+                    <input type="text" id="add-last-name" placeholder="e.g. Doe" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Email Address *</label>
+                <input type="email" id="add-email" required placeholder="name@company.com" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">JobID / Survey Key</label>
+                    <input type="text" id="add-job-id" placeholder="Optional - auto-assigned if empty" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Phone Number</label>
+                    <input type="text" id="add-phone" placeholder="e.g. 03001234567" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Login Password (Survey Credential)</label>
+                <input type="password" id="add-password" placeholder="Stored encrypted at rest" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Initial Status</label>
+                <select id="add-status" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="UNUSED">UNUSED (Eligible for automated reminders)</option>
+                    <option value="USED">USED (Survey completed)</option>
+                </select>
+            </div>
+
+            <!-- Group Custom Fields (dynamically injected) -->
+            <div id="add-group-custom-fields" class="hidden">
+                <div class="flex items-center gap-2 pt-1 pb-2">
+                    <div class="flex-1 h-px bg-violet-100"></div>
+                    <span class="text-[10px] font-extrabold uppercase text-violet-500 tracking-wider flex items-center gap-1"><i data-lucide="layout-list" class="w-3 h-3"></i> Group Fields</span>
+                    <div class="flex-1 h-px bg-violet-100"></div>
+                </div>
+                <div id="add-group-custom-fields-inner" class="space-y-3"></div>
+            </div>
+
+            <div class="pt-4 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onclick="closeAddContactModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50">Cancel</button>
+                <button type="submit" id="btn-save-contact" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all">Save Contact</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Contact Modal -->
+<div id="edit-contact-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+            <div class="flex items-center gap-2.5">
+                <div class="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                    <i data-lucide="edit-3" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-slate-900">Edit Contact</h3>
+                    <p class="text-[11px] text-slate-400" id="edit-contact-subtitle"></p>
+                </div>
+            </div>
+            <button onclick="closeEditContactModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <form id="edit-contact-form" class="space-y-4 pt-4 text-sm" onsubmit="submitEditContact(event)">
+            <input type="hidden" id="edit-contact-id">
+
+            <!-- Group Assignment Selector -->
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Assign to Contact Group</label>
+                <select id="edit-group-id" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                    <option value="">-- No specific group (All Contacts only) --</option>
+                    {% for g in groups %}
+                    <option value="{{ g.id }}">{{ g.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">First Name</label>
+                    <input type="text" id="edit-first-name" placeholder="e.g. John" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Last Name</label>
+                    <input type="text" id="edit-last-name" placeholder="e.g. Doe" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Email Address *</label>
+                <input type="email" id="edit-email" required placeholder="name@company.com" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">JobID / Survey Key</label>
+                    <input type="text" id="edit-job-id" placeholder="Survey identifier" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Phone Number</label>
+                    <input type="text" id="edit-phone" placeholder="e.g. 03001234567" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Survey Status</label>
+                    <select id="edit-status" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold">
+                        <option value="UNUSED">UNUSED (Eligible for reminders)</option>
+                        <option value="USED">USED (Survey completed)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Email Status</label>
+                    <select id="edit-email-status" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold">
+                        <option value="Active">Active</option>
+                        <option value="Unsubscribed">Unsubscribed</option>
+                        <option value="Soft Bounce">Soft Bounce</option>
+                        <option value="Hard Bounce">Hard Bounce</option>
+                        <option value="Blocked">Blocked</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Login Password (Survey Credential)</label>
+                <input type="password" id="edit-password" placeholder="Leave empty to keep existing password" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <p class="text-[11px] text-slate-400 mt-1">Leave blank to keep current credential intact, or type a new password to re-encrypt.</p>
+            </div>
+
+            <!-- Group Custom Fields (dynamically injected) -->
+            <div id="edit-group-custom-fields" class="hidden">
+                <div class="flex items-center gap-2 pt-1 pb-2">
+                    <div class="flex-1 h-px bg-violet-100"></div>
+                    <span class="text-[10px] font-extrabold uppercase text-violet-500 tracking-wider flex items-center gap-1"><i data-lucide="layout-list" class="w-3 h-3"></i> Group Fields</span>
+                    <div class="flex-1 h-px bg-violet-100"></div>
+                </div>
+                <div id="edit-group-custom-fields-inner" class="space-y-3"></div>
+            </div>
+
+            <div class="pt-4 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onclick="closeEditContactModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50">Cancel</button>
+                <button type="submit" id="btn-update-contact" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition-all">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Contact Activity Timeline Modal (Requirement 11) -->
+<div id="history-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-xl w-full shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div class="bg-gradient-to-r from-blue-600 to-indigo-700 px-6 py-4 text-white flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+                <div class="p-2 bg-white/15 rounded-xl backdrop-blur-xs">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <div>
+                    <h3 class="text-base font-extrabold leading-tight" id="history-contact-title">Contact Activity Timeline</h3>
+                    <p class="text-xs text-blue-100 font-medium">Chronological record of emails, link clicks & ODK status</p>
+                </div>
+            </div>
+            <button onclick="closeHistoryModal()" class="text-white/80 hover:text-white p-1 rounded-lg"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <div class="p-6 max-h-[70vh] overflow-y-auto space-y-4" id="history-timeline">
+            <!-- Timeline records -->
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<style>
+    .gcf-col { white-space: nowrap; }
+</style>
+<script>
+    let currentContactPage = 1;
+    let currentContactPageSize = 25;
+    let selectedContactIds = new Set();
+    let selectAllAcrossPages = false;
+    let totalMatchingContacts = 0;
+
+    // ─── Group Custom Fields State ────────────────────────────────────────────
+    let activeGroupCustomFields = []; // array of field defs for the active group
+    let activeGroupId = null;
+
+    async function loadGroupCustomFields(groupId) {
+        if (!groupId) {
+            activeGroupCustomFields = [];
+            activeGroupId = null;
+            renderGroupFieldColumns();
+            return;
+        }
+        try {
+            // Only load ACTIVE fields — controlled by the toggle in Manage Fields
+            const res = await fetch(`/api/groups/${groupId}/fields/?active=true`);
+            if (res.ok) {
+                activeGroupCustomFields = await res.json();
+            } else {
+                activeGroupCustomFields = [];
+            }
+        } catch (e) {
+            activeGroupCustomFields = [];
+        }
+        activeGroupId = groupId || null;
+        renderGroupFieldColumns();
+    }
+
+    function renderGroupFieldColumns() {
+        const thead = document.getElementById('contacts-thead-row');
+        if (!thead) return;
+        // Remove existing group-field header columns
+        thead.querySelectorAll('.gcf-col').forEach(el => el.remove());
+        // Insert before Actions column (last th)
+        const actionsTh = thead.querySelector('th:last-child');
+        activeGroupCustomFields.forEach(f => {
+            const th = document.createElement('th');
+            th.className = 'py-3.5 px-4 text-center gcf-col';
+            th.style.color = '#7c3aed';
+            th.innerHTML = `<span style="color:#7c3aed">${escapeHtml(f.name)}</span>`;
+            thead.insertBefore(th, actionsTh);
+        });
+    }
+
+    async function getContactGroupValues(contactId, groupId) {
+        if (!groupId || !contactId) return {};
+        try {
+            const res = await fetch(`/api/groups/${groupId}/contact-values/${contactId}/`);
+            if (res.ok) {
+                const vals = await res.json();
+                const map = {};
+                vals.forEach(v => { map[v.field_slug] = v.value; });
+                return map;
+            }
+        } catch (e) {}
+        return {};
+    }
+
+    async function saveContactGroupValues(contactId, groupId, valuesMap) {
+        if (!groupId || !contactId || Object.keys(valuesMap).length === 0) return;
+        try {
+            await fetch(`/api/groups/${groupId}/contact-values/${contactId}/save/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify({ values: valuesMap })
+            });
+        } catch (e) { console.error('Failed to save group values', e); }
+    }
+
+    function buildGroupFieldInput(field, existingValue, prefix) {
+        const id = `${prefix}-gcf-${field.slug}`;
+        const val = existingValue || '';
+        const reqAttr = field.is_required ? 'required' : '';
+        let inputHtml = '';
+        if (field.field_type === 'BOOLEAN') {
+            inputHtml = `<select id="${id}" data-gcf-slug="${field.slug}" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500" ${reqAttr}>
+                <option value="">-- Select --</option>
+                <option value="Yes" ${val === 'Yes' ? 'selected' : ''}>Yes</option>
+                <option value="No" ${val === 'No' ? 'selected' : ''}>No</option>
+            </select>`;
+        } else if (field.field_type === 'SELECT' && field.options && field.options.length > 0) {
+            const opts = field.options.map(o => `<option value="${escapeHtml(o)}" ${val === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('');
+            inputHtml = `<select id="${id}" data-gcf-slug="${field.slug}" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500" ${reqAttr}>
+                <option value="">-- Select --</option>
+                ${opts}
+            </select>`;
+        } else if (field.field_type === 'DATE') {
+            inputHtml = `<input type="date" id="${id}" data-gcf-slug="${field.slug}" value="${escapeHtml(val)}" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500" ${reqAttr}>`;
+        } else if (field.field_type === 'NUMBER') {
+            inputHtml = `<input type="number" id="${id}" data-gcf-slug="${field.slug}" value="${escapeHtml(val)}" placeholder="${escapeHtml(field.description || field.name)}" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500" ${reqAttr}>`;
+        } else if (field.field_type === 'EMAIL') {
+            inputHtml = `<input type="email" id="${id}" data-gcf-slug="${field.slug}" value="${escapeHtml(val)}" placeholder="${escapeHtml(field.description || field.name)}" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500" ${reqAttr}>`;
+        } else if (field.field_type === 'URL') {
+            inputHtml = `<input type="url" id="${id}" data-gcf-slug="${field.slug}" value="${escapeHtml(val)}" placeholder="${escapeHtml(field.description || field.name)}" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500" ${reqAttr}>`;
+        } else {
+            inputHtml = `<input type="text" id="${id}" data-gcf-slug="${field.slug}" value="${escapeHtml(val)}" placeholder="${escapeHtml(field.description || field.name)}" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500" ${reqAttr}>`;
+        }
+        return `<div>
+            <label class="block text-xs font-bold text-violet-700 uppercase mb-1">${escapeHtml(field.name)}${field.is_required ? ' <span class="text-rose-500">*</span>' : ''}</label>
+            ${field.description ? `<p class="text-[11px] text-slate-400 mb-1">${escapeHtml(field.description)}</p>` : ''}
+            ${inputHtml}
+        </div>`;
+    }
+
+    function renderGroupFieldsInModal(containerId, wrapId, fields, existingValues, prefix) {
+        const wrap = document.getElementById(wrapId);
+        const inner = document.getElementById(containerId);
+        if (!wrap || !inner) return;
+        if (!fields || fields.length === 0) {
+            wrap.classList.add('hidden');
+            return;
+        }
+        wrap.classList.remove('hidden');
+        inner.innerHTML = fields.map(f => buildGroupFieldInput(f, existingValues[f.slug] || '', prefix)).join('');
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function collectGroupFieldValues(prefix) {
+        const inputs = document.querySelectorAll(`[id^="${prefix}-gcf-"][data-gcf-slug]`);
+        const values = {};
+        inputs.forEach(el => {
+            values[el.dataset.gcfSlug] = el.value;
+        });
+        return values;
+    }
+
+    function escapeHtml(str) {
+        if (!str && str !== 0) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function changeContactsPage(page) {
+        currentContactPage = page;
+        loadContacts(currentContactPage);
+    }
+
+    function changeContactsPageSize(newSize) {
+        currentContactPageSize = newSize;
+        currentContactPage = 1;
+        loadContacts(1);
+    }
+
+    function updateGroupContext() {
+        const groupSelect = document.getElementById('filter-group');
+        const activeGroupVal = groupSelect.value;
+        const banner = document.getElementById('group-focus-banner');
+        const headerImportBtn = document.getElementById('header-btn-import');
+        const groupImportLink = document.getElementById('btn-group-import-link');
+
+        if (activeGroupVal && groupSelect.selectedIndex >= 0) {
+            const selectedOpt = groupSelect.options[groupSelect.selectedIndex];
+            if (selectedOpt && selectedOpt.value) {
+                const selectedText = selectedOpt.text;
+                document.getElementById('group-banner-name').textContent = selectedText;
+                banner.classList.remove('hidden');
+
+                const importUrl = `/contacts/import/?group=${activeGroupVal}`;
+                if (headerImportBtn) headerImportBtn.href = importUrl;
+                if (groupImportLink) groupImportLink.href = importUrl;
+
+                // Sync URL query without reloading
+                const newUrl = new URL(window.location);
+                newUrl.searchParams.set('group', activeGroupVal);
+                window.history.replaceState({}, '', newUrl);
+            } else {
+                banner.classList.add('hidden');
+            }
+        } else {
+            banner.classList.add('hidden');
+            if (headerImportBtn) headerImportBtn.href = '/contacts/import/';
+
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.delete('group');
+            window.history.replaceState({}, '', newUrl);
+        }
+        lucide.createIcons();
+    }
+
+    function clearGroupFilter() {
+        document.getElementById('filter-group').value = '';
+        updateGroupContext();
+        currentContactPage = 1;
+        loadContacts(1);
+    }
+
+    function openAddContactModalForGroup() {
+        const activeGroup = document.getElementById('filter-group').value;
+        openAddContactModal(activeGroup);
+    }
+
+    function openAddContactModal(preselectedGroupId = null) {
+        if (!preselectedGroupId) {
+            preselectedGroupId = document.getElementById('filter-group').value;
+        }
+        const groupSelect = document.getElementById('add-group-id');
+        if (groupSelect && preselectedGroupId) {
+            groupSelect.value = preselectedGroupId;
+        }
+        // Load group fields for the preselected group (active only)
+        if (preselectedGroupId && activeGroupCustomFields.length > 0) {
+            renderGroupFieldsInModal('add-group-custom-fields-inner', 'add-group-custom-fields', activeGroupCustomFields, {}, 'add');
+        } else if (preselectedGroupId) {
+            // load from API in case fields changed
+            fetch(`/api/groups/${preselectedGroupId}/fields/?active=true`).then(r => r.json()).then(fields => {
+                renderGroupFieldsInModal('add-group-custom-fields-inner', 'add-group-custom-fields', fields, {}, 'add');
+            }).catch(() => {});
+        } else {
+            document.getElementById('add-group-custom-fields').classList.add('hidden');
+        }
+        document.getElementById('add-contact-modal').classList.remove('hidden');
+        document.getElementById('add-email').focus();
+    }
+
+    function onAddGroupChange() {
+        const groupId = document.getElementById('add-group-id').value;
+        if (!groupId) {
+            document.getElementById('add-group-custom-fields').classList.add('hidden');
+            return;
+        }
+        // Fetch only active fields
+        fetch(`/api/groups/${groupId}/fields/?active=true`).then(r => r.json()).then(fields => {
+            renderGroupFieldsInModal('add-group-custom-fields-inner', 'add-group-custom-fields', fields, {}, 'add');
+        }).catch(() => {});
+    }
+
+    function closeAddContactModal() {
+        document.getElementById('add-contact-modal').classList.add('hidden');
+    }
+
+    async function loadContacts(page = 1) {
+        currentContactPage = page;
+        updateGroupContext();
+
+        const searchInput = document.getElementById('search-input');
+        const statusSelect = document.getElementById('filter-status');
+        const groupSelect = document.getElementById('filter-group');
+        const emailStatusSelect = document.getElementById('filter-email-status');
+        const sourceSelect = document.getElementById('filter-source');
+
+        const search = searchInput ? searchInput.value.trim() : '';
+        const status = statusSelect ? statusSelect.value : '';
+        const group = groupSelect ? groupSelect.value : '';
+        const emailStatus = emailStatusSelect ? emailStatusSelect.value : '';
+        const source = sourceSelect ? sourceSelect.value : '';
+
+        // Load group custom fields if group changed
+        if (group !== String(activeGroupId || '')) {
+            await loadGroupCustomFields(group);
+        }
+
+        const params = new URLSearchParams();
+        params.set('page', currentContactPage);
+        params.set('page_size', currentContactPageSize);
+        if (search) params.set('search', search);
+        if (status) params.set('status', status);
+        if (group) params.set('group', group);
+        if (emailStatus) params.set('email_status', emailStatus);
+        if (source) params.set('source', source);
+
+        const fullUrl = `/api/contacts/?${params.toString()}`;
+
+        try {
+            const res = await fetch(fullUrl);
+            if (!res.ok) {
+                if (res.status === 401 || res.status === 403) {
+                    window.location.href = '/login/?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+                    return;
+                }
+                throw new Error(`Server returned HTTP ${res.status}`);
+            }
+            const data = await res.json();
+            const contacts = data.results || (Array.isArray(data) ? data : []);
+            const tbody = document.getElementById('contacts-tbody');
+
+            const totalCount = data.count !== undefined ? data.count : contacts.length;
+            const totalPages = data.total_pages || Math.ceil(totalCount / currentContactPageSize) || 1;
+            const currentPage = data.current_page || currentContactPage;
+
+            totalMatchingContacts = totalCount;
+            const quickCount = document.getElementById('quick-select-count');
+            if (quickCount) quickCount.textContent = totalMatchingContacts;
+
+            if (group) {
+                const groupBannerCount = document.getElementById('group-banner-count');
+                if (groupBannerCount) {
+                    groupBannerCount.textContent = `${totalCount} contact${totalCount === 1 ? '' : 's'}`;
+                }
+            }
+
+            if (!contacts || contacts.length === 0) {
+                if (group) {
+                    const groupName = (groupSelect && groupSelect.selectedIndex >= 0) ? groupSelect.options[groupSelect.selectedIndex].text : 'Selected Group';
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="10" class="py-16 text-center">
+                                <div class="max-w-md mx-auto p-6 bg-slate-50/80 rounded-3xl border border-slate-200/60 shadow-sm">
+                                    <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                                        <i data-lucide="users" class="w-6 h-6"></i>
+                                    </div>
+                                    <h4 class="font-bold text-slate-900 text-sm">No contacts in "${escapeHtml(groupName)}" yet</h4>
+                                    <p class="text-xs text-slate-500 mt-1 mb-5">Add contacts manually, import a CSV file, or assign existing contacts from All Contacts.</p>
+                                    <div class="flex items-center justify-center gap-2.5 flex-wrap">
+                                        <button onclick="openAddContactModalForGroup()" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1.5">
+                                             <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Add Contact
+                                        </button>
+                                        <a href="/contacts/import/?group=${encodeURIComponent(group)}" class="px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 font-bold text-xs rounded-xl shadow-sm flex items-center gap-1.5">
+                                            <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i> Import CSV/Excel
+                                        </a>
+                                        <button onclick="clearGroupFilter()" class="px-3.5 py-2 text-blue-600 hover:bg-blue-50 font-bold text-xs rounded-xl">
+                                            Pick from All Contacts
+                                        </button>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="10" class="py-12 text-center text-slate-400">No contacts found matching criteria.</td></tr>`;
+                }
+                renderPagination({
+                    containerId: 'contacts-pagination-container',
+                    totalCount: 0
+                });
+                updateBulkBar();
+                if (window.lucide) lucide.createIcons();
+                return;
+            }
+
+            tbody.innerHTML = contacts.map(c => {
+                const displayName = (c.name || `${c.first_name || ''} ${c.last_name || ''}`).trim() || c.email;
+                const isChecked = selectAllAcrossPages || selectedContactIds.has(c.id);
+
+                // Source Badge (ODK Central, Excel/CSV, Manual, etc.)
+                let sourceBadge = '';
+                const src = (c.status_source || '').toUpperCase();
+                if (src === 'ODK_CENTRAL' || (c.odk_submission_id && !src)) {
+                    sourceBadge = `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200 shadow-sm" title="Imported from ODK Central"><i data-lucide="database" class="w-3 h-3 text-blue-600"></i>ODK</span>`;
+                } else if (src === 'IMPORT') {
+                    sourceBadge = `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm" title="Imported from Excel / CSV file"><i data-lucide="file-spreadsheet" class="w-3 h-3 text-emerald-600"></i>Excel / CSV</span>`;
+                } else if (src === 'MANUAL') {
+                    sourceBadge = `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200 shadow-sm" title="Added manually"><i data-lucide="user" class="w-3 h-3 text-slate-500"></i>Manual</span>`;
+                } else if (src === 'SEED') {
+                    sourceBadge = `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-purple-50 text-purple-700 border border-purple-200 shadow-sm" title="Demo Seed Data"><i data-lucide="sparkles" class="w-3 h-3 text-purple-600"></i>Seed</span>`;
+                } else {
+                    sourceBadge = `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200 shadow-sm">${escapeHtml(c.status_source || 'Manual')}</span>`;
+                }
+
+                // Last Updated formatting
+                let updatedHtml = '<span class="text-slate-400 text-xs">-</span>';
+                if (c.updated_at) {
+                    const d = new Date(c.updated_at);
+                    if (!isNaN(d.getTime())) {
+                        const dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                        const timeStr = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+                        updatedHtml = `
+                            <div class="text-xs font-semibold text-slate-700 whitespace-nowrap">${escapeHtml(dateStr)}</div>
+                            <div class="text-[11px] text-slate-400 font-mono">${escapeHtml(timeStr)}</div>
+                        `;
+                    }
+                }
+
+                // Group custom field values in the row
+                const gcfCells = activeGroupCustomFields.map(f => {
+                    // Find value from c.group_custom_values if available, else blank
+                    let gcfVal = '';
+                    if (c.group_custom_values) {
+                        const entry = c.group_custom_values.find(v => v.field_slug === f.slug);
+                        if (entry) gcfVal = entry.value || '';
+                    }
+                    return `<td class="py-3.5 px-4 text-center text-xs text-slate-700 gcf-col">${escapeHtml(gcfVal || '-')}</td>`;
+                }).join('');
+
+                return `
+                <tr class="hover:bg-slate-50/80 transition-colors">
+                    <td class="py-3.5 px-4 text-center">
+                        <input type="checkbox" class="contact-checkbox rounded text-blue-600" value="${c.id}" onchange="toggleSelect(${c.id})" ${isChecked ? 'checked' : ''}>
+                    </td>
+                    <td class="py-3.5 px-4">
+                        <div class="font-bold text-slate-900">${escapeHtml(displayName)}</div>
+                        <div class="text-xs text-slate-500">${escapeHtml(c.email)}</div>
+                    </td>
+                    <td class="py-3.5 px-4 font-mono text-xs font-semibold text-slate-700 truncate max-w-[180px]" title="${escapeHtml(c.job_id || '')}">${escapeHtml(c.job_id || '-')}</td>
+                    <td class="py-3.5 px-4 text-xs text-slate-600">${escapeHtml(c.phone_number || '-')}</td>
+                    <td class="py-3.5 px-4 text-center">
+                        <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${c.status === 'USED' ? 'badge-used' : 'badge-unused'}">
+                            ${escapeHtml(c.status)}
+                        </span>
+                    </td>
+                    <td class="py-3.5 px-4 text-center">
+                        <span class="inline-block px-2 py-0.5 rounded text-xs font-medium ${c.email_status === 'Active' ? 'badge-active' : (c.unsubscribed ? 'badge-unsub' : 'badge-bounced')}">
+                            ${c.unsubscribed ? 'Unsubscribed' : escapeHtml(c.email_status)}
+                        </span>
+                    </td>
+                    <td class="py-3.5 px-4 text-center text-xs font-medium text-slate-700">
+                        ${c.reminder_count > 0 ? `<span class="bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded">${c.reminder_count} sent</span>` : '<span class="text-slate-400">None</span>'}
+                    </td>
+                    <td class="py-3.5 px-4 text-center whitespace-nowrap">
+                        ${sourceBadge}
+                    </td>
+                    <td class="py-3.5 px-4 text-center whitespace-nowrap">
+                        ${updatedHtml}
+                    </td>
+                    ${gcfCells}
+                    <td class="py-3.5 px-4 text-right whitespace-nowrap">
+                        <div class="inline-flex items-center gap-1.5 justify-end">
+                            <button onclick="openEditContactModal(${c.id})" class="text-xs text-indigo-600 hover:text-indigo-800 font-bold px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors inline-flex items-center gap-1" title="Edit Contact">
+                                <i data-lucide="edit-2" class="w-3.5 h-3.5"></i> Edit
+                            </button>
+                            <button onclick="viewHistory(${c.id}, this.dataset.name)" data-name="${escapeHtml(displayName)}" class="text-xs text-blue-600 hover:text-blue-800 font-semibold px-2.5 py-1 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors inline-flex items-center gap-1" title="Activity Timeline">
+                                <i data-lucide="clock" class="w-3.5 h-3.5"></i> Timeline
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            }).join('');
+
+            renderPagination({
+                containerId: 'contacts-pagination-container',
+                totalCount: totalCount,
+                currentPage: currentPage,
+                pageSize: currentContactPageSize,
+                totalPages: totalPages,
+                onPageChange: 'changeContactsPage',
+                onPageSizeChange: 'changeContactsPageSize'
+            });
+
+            updateBulkBar();
+            if (window.lucide) lucide.createIcons();
+        } catch (err) {
+            console.error('Error loading contacts:', err);
+            const tbody = document.getElementById('contacts-tbody');
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="10" class="py-8 text-center text-rose-500 font-semibold">Failed to load contacts: ${escapeHtml(err.message || String(err))}</td></tr>`;
+            }
+        }
+    }
+
+    function escapeJs(str) {
+        if (!str) return '';
+        return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    function toggleSelect(id) {
+        if (selectAllAcrossPages) {
+            selectAllAcrossPages = false;
+            // Capture all currently checked boxes on page
+            selectedContactIds.clear();
+            document.querySelectorAll('.contact-checkbox').forEach(cb => {
+                if (cb.checked) selectedContactIds.add(parseInt(cb.value));
+            });
+        } else {
+            if (selectedContactIds.has(id)) selectedContactIds.delete(id);
+            else selectedContactIds.add(id);
+        }
+        updateBulkBar();
+    }
+
+    function selectAllMatchingContacts() {
+        selectAllAcrossPages = true;
+        document.querySelectorAll('.contact-checkbox').forEach(cb => {
+            cb.checked = true;
+            selectedContactIds.add(parseInt(cb.value));
+        });
+        updateBulkBar();
+        showToast(`Selected all ${totalMatchingContacts} contacts across all pages`);
+    }
+
+    function clearAllSelections() {
+        selectAllAcrossPages = false;
+        selectedContactIds.clear();
+        document.querySelectorAll('.contact-checkbox').forEach(cb => cb.checked = false);
+        const selectAllCb = document.getElementById('select-all');
+        if (selectAllCb) {
+            selectAllCb.checked = false;
+            selectAllCb.indeterminate = false;
+        }
+        updateBulkBar();
+    }
+
+    const selectAllElement = document.getElementById('select-all');
+    if (selectAllElement) {
+        selectAllElement.addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            const checkboxes = document.querySelectorAll('.contact-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = isChecked;
+                const val = parseInt(cb.value);
+                if (isChecked) selectedContactIds.add(val);
+                else selectedContactIds.delete(val);
+            });
+            if (!isChecked) {
+                selectAllAcrossPages = false;
+            }
+            updateBulkBar();
+        });
+    }
+
+    function updateBulkBar() {
+        const bar = document.getElementById('bulk-bar');
+        const countSpan = document.getElementById('selected-count-text');
+        const banner = document.getElementById('selection-banner');
+        const bannerText = document.getElementById('selection-banner-text');
+        const bannerBtn = document.getElementById('btn-banner-select-all');
+        const pageCheckboxes = document.querySelectorAll('.contact-checkbox');
+        const allOnPageChecked = pageCheckboxes.length > 0 && Array.from(pageCheckboxes).every(cb => cb.checked);
+
+        const selectAllCb = document.getElementById('select-all');
+        if (selectAllCb) {
+            selectAllCb.checked = selectAllAcrossPages || (allOnPageChecked && pageCheckboxes.length > 0);
+            selectAllCb.indeterminate = (!selectAllAcrossPages && !allOnPageChecked && selectedContactIds.size > 0);
+        }
+
+        if (selectAllAcrossPages) {
+            bar.classList.remove('hidden');
+            countSpan.innerHTML = `<span class="bg-indigo-500/40 text-indigo-100 border border-indigo-400/40 px-2 py-0.5 rounded text-[11px] font-extrabold mr-1">ALL</span> All ${totalMatchingContacts} contacts selected`;
+            if (banner) {
+                banner.classList.remove('hidden');
+                bannerText.innerHTML = `All <strong>${totalMatchingContacts}</strong> contacts matching current filters are selected.`;
+                if (bannerBtn) bannerBtn.classList.add('hidden');
+            }
+        } else if (selectedContactIds.size > 0) {
+            bar.classList.remove('hidden');
+            countSpan.textContent = `${selectedContactIds.size} contact${selectedContactIds.size === 1 ? '' : 's'} selected`;
+
+            if (allOnPageChecked && totalMatchingContacts > pageCheckboxes.length) {
+                if (banner) {
+                    banner.classList.remove('hidden');
+                    bannerText.innerHTML = `All <strong>${pageCheckboxes.length}</strong> contacts on this page are selected.`;
+                    if (bannerBtn) {
+                        bannerBtn.classList.remove('hidden');
+                        const totalSpan = document.getElementById('selection-total-count');
+                        if (totalSpan) totalSpan.textContent = totalMatchingContacts;
+                    }
+                }
+            } else {
+                if (banner) banner.classList.add('hidden');
+            }
+        } else {
+            bar.classList.add('hidden');
+            if (banner) banner.classList.add('hidden');
+        }
+    }
+
+    async function applyBulkAddToGroup() {
+        const groupId = document.getElementById('bulk-target-group').value;
+        if (!groupId) {
+            alert('Please select a target group from the dropdown first.');
+            return;
+        }
+        if (!selectAllAcrossPages && selectedContactIds.size === 0) return;
+
+        const payload = {
+            action: 'add_to_group',
+            group_id: groupId
+        };
+        if (selectAllAcrossPages) {
+            payload.select_all = true;
+            payload.search = document.getElementById('search-input').value;
+            payload.status = document.getElementById('filter-status').value;
+            payload.source = document.getElementById('filter-source')?.value || '';
+            payload.group = document.getElementById('filter-group').value;
+            payload.email_status = document.getElementById('filter-email-status').value;
+        } else {
+            payload.contact_ids = Array.from(selectedContactIds);
+        }
+
+        try {
+            const res = await fetch('/api/contacts/bulk-action/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            showToast(data.message || 'Contacts added to group');
+            clearAllSelections();
+            loadContacts(currentContactPage);
+        } catch (err) {
+            console.error(err);
+            alert('Failed to add contacts to group');
+        }
+    }
+
+    async function applyBulkAction(action) {
+        if (!selectAllAcrossPages && selectedContactIds.size === 0) return;
+
+        const countDesc = selectAllAcrossPages ? `ALL ${totalMatchingContacts}` : `${selectedContactIds.size}`;
+        if (action === 'delete') {
+            if (!confirm(`Are you sure you want to delete ${countDesc} contact(s)? This cannot be undone.`)) {
+                return;
+            }
+        }
+
+        const payload = { action };
+        if (selectAllAcrossPages) {
+            payload.select_all = true;
+            payload.search = document.getElementById('search-input').value;
+            payload.status = document.getElementById('filter-status').value;
+            payload.source = document.getElementById('filter-source')?.value || '';
+            payload.group = document.getElementById('filter-group').value;
+            payload.email_status = document.getElementById('filter-email-status').value;
+        } else {
+            payload.contact_ids = Array.from(selectedContactIds);
+        }
+
+        try {
+            const res = await fetch('/api/contacts/bulk-action/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            showToast(data.message || 'Bulk action applied');
+            clearAllSelections();
+            loadContacts(currentContactPage);
+        } catch (err) {
+            console.error(err);
+            alert('Failed to apply bulk action');
+        }
+    }
+
+    // Edit Contact Functions
+    async function openEditContactModal(id) {
+        try {
+            const res = await fetch(`/api/contacts/${id}/`);
+            if (!res.ok) {
+                showToast('Failed to load contact details', 'error');
+                return;
+            }
+            const c = await res.json();
+            document.getElementById('edit-contact-id').value = c.id;
+            document.getElementById('edit-contact-subtitle').textContent = `Editing Contact #${c.id} • ${c.email}`;
+            document.getElementById('edit-first-name').value = c.first_name || '';
+            document.getElementById('edit-last-name').value = c.last_name || '';
+            document.getElementById('edit-email').value = c.email || '';
+            document.getElementById('edit-job-id').value = c.job_id || '';
+            document.getElementById('edit-phone').value = c.phone_number || '';
+            document.getElementById('edit-status').value = c.status || 'UNUSED';
+            document.getElementById('edit-email-status').value = c.email_status || 'Active';
+            document.getElementById('edit-password').value = '';
+
+            const groupSelect = document.getElementById('edit-group-id');
+            let resolvedGroupId = null;
+            if (groupSelect) {
+                if (c.group_ids && c.group_ids.length > 0) {
+                    groupSelect.value = c.group_ids[0];
+                    resolvedGroupId = c.group_ids[0];
+                } else {
+                    groupSelect.value = '';
+                }
+            }
+
+            // Load group custom fields & existing values
+            const gid = resolvedGroupId || activeGroupId;
+            if (gid) {
+                const [fieldsRes, existingValues] = await Promise.all([
+                    fetch(`/api/groups/${gid}/fields/?active=true`).then(r => r.ok ? r.json() : []),
+                    getContactGroupValues(c.id, gid)
+                ]);
+                renderGroupFieldsInModal('edit-group-custom-fields-inner', 'edit-group-custom-fields', fieldsRes, existingValues, 'edit');
+            } else {
+                document.getElementById('edit-group-custom-fields').classList.add('hidden');
+            }
+
+            document.getElementById('edit-contact-modal').classList.remove('hidden');
+            lucide.createIcons();
+        } catch (err) {
+            console.error(err);
+            showToast('Error loading contact', 'error');
+        }
+    }
+
+    function closeEditContactModal() {
+        document.getElementById('edit-contact-modal').classList.add('hidden');
+    }
+
+    async function submitEditContact(e) {
+        e.preventDefault();
+        const id = document.getElementById('edit-contact-id').value;
+        const btn = document.getElementById('btn-update-contact');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="animate-spin mr-1">&#9696;</span> Saving...';
+
+        const firstName = document.getElementById('edit-first-name').value.trim();
+        const lastName = document.getElementById('edit-last-name').value.trim();
+        const email = document.getElementById('edit-email').value.trim();
+        const password = document.getElementById('edit-password').value;
+        const groupId = document.getElementById('edit-group-id').value;
+
+        const payload = {
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            job_id: document.getElementById('edit-job-id').value.trim(),
+            phone_number: document.getElementById('edit-phone').value.trim(),
+            status: document.getElementById('edit-status').value,
+            email_status: document.getElementById('edit-email-status').value,
+            group_id: groupId || null
+        };
+        if (password) {
+            payload.login_password = password;
+        }
+
+        try {
+            const res = await fetch(`/api/contacts/${id}/`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                // Save group custom field values
+                const gid = groupId || activeGroupId;
+                if (gid) {
+                    const gcfValues = collectGroupFieldValues('edit');
+                    await saveContactGroupValues(id, gid, gcfValues);
+                }
+                showToast('Contact updated successfully');
+                closeEditContactModal();
+                loadContacts(currentContactPage);
+            } else {
+                const err = await res.json();
+                alert('Error updating contact: ' + JSON.stringify(err));
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Failed to update contact');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Save Changes';
+        }
+    }
+
+    async function submitAddContact(e) {
+        e.preventDefault();
+        const btn = document.getElementById('btn-save-contact');
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+
+        const firstName = document.getElementById('add-first-name').value.trim();
+        const lastName = document.getElementById('add-last-name').value.trim();
+        const email = document.getElementById('add-email').value.trim();
+        let jobId = document.getElementById('add-job-id').value.trim();
+        if (!jobId) {
+            jobId = `ID-${Date.now().toString().slice(-6)}`;
+        }
+
+        const payload = {
+            first_name: firstName,
+            last_name: lastName,
+            name: `${firstName} ${lastName}`.trim() || email.split('@')[0],
+            email: email,
+            job_id: jobId,
+            phone_number: document.getElementById('add-phone').value.trim(),
+            login_password: document.getElementById('add-password').value,
+            status: document.getElementById('add-status').value,
+            group_id: document.getElementById('add-group-id').value || null,
+        };
+
+        try {
+            const res = await fetch('/api/contacts/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                const newContact = await res.json();
+                // Save group custom field values for the new contact
+                const gid = payload.group_id || activeGroupId;
+                if (gid && newContact.id) {
+                    const gcfValues = collectGroupFieldValues('add');
+                    await saveContactGroupValues(newContact.id, gid, gcfValues);
+                }
+                showToast('Contact created successfully');
+                closeAddContactModal();
+                document.getElementById('add-contact-form').reset();
+                document.getElementById('add-group-custom-fields').classList.add('hidden');
+                loadContacts(1);
+            } else {
+                const err = await res.json();
+                alert('Error: ' + JSON.stringify(err));
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Failed to create contact');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Save Contact';
+        }
+    }
+
+    async function viewHistory(id, name) {
+        const titleEl = document.getElementById('history-contact-title');
+        if (titleEl) titleEl.textContent = `Activity Timeline: ${name || 'Contact #' + id}`;
+        const container = document.getElementById('history-timeline');
+        if (container) container.innerHTML = '<div class="py-8 text-center text-slate-400">Loading timeline...</div>';
+        const modal = document.getElementById('history-modal');
+        if (modal) modal.classList.remove('hidden');
+
+        try {
+            const res = await fetch(`/api/contacts/${id}/timeline/`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const events = await res.json();
+            if (!container) return;
+            if (!events || events.length === 0) {
+                container.innerHTML = '<div class="text-xs text-slate-400 text-center py-6">No activity recorded yet for this contact.</div>';
+            } else {
+                container.innerHTML = `
+                    <div class="relative pl-6 border-l-2 border-slate-200 space-y-6">
+                        ${events.map(e => {
+                            const dateStr = e.timestamp ? new Date(e.timestamp).toLocaleDateString(undefined, {
+                                day: 'numeric', month: 'short', year: 'numeric'
+                            }) : '';
+                            const timeStr = e.timestamp ? new Date(e.timestamp).toLocaleTimeString(undefined, {
+                                hour: '2-digit', minute: '2-digit'
+                            }) : '';
+
+                            let dotColor = 'bg-blue-600 ring-blue-100';
+                            if (e.badge === 'emerald') dotColor = 'bg-emerald-600 ring-emerald-100';
+                            if (e.badge === 'amber') dotColor = 'bg-amber-500 ring-amber-100';
+                            if (e.badge === 'indigo') dotColor = 'bg-indigo-600 ring-indigo-100';
+                            if (e.badge === 'purple') dotColor = 'bg-purple-600 ring-purple-100';
+                            if (e.badge === 'teal') dotColor = 'bg-teal-600 ring-teal-100';
+
+                            return `
+                                <div class="relative group">
+                                    <div class="absolute -left-[31px] top-0.5 w-4 h-4 rounded-full ${dotColor} ring-4 border-2 border-white shadow-xs"></div>
+                                    <div class="text-xs font-bold text-slate-400 mb-0.5">${dateStr} &ndash; ${timeStr}</div>
+                                    <div class="p-3 bg-slate-50/80 hover:bg-slate-50 rounded-2xl border border-slate-200/70 shadow-2xs space-y-1">
+                                        <div class="font-bold text-slate-900 text-xs flex items-center justify-between">
+                                            <span>${escapeHtml(e.title)}</span>
+                                            <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-600">${escapeHtml(e.type.replace('_', ' '))}</span>
+                                        </div>
+                                        ${e.description ? `<div class="text-[11px] text-slate-600 leading-relaxed">${e.description}</div>` : ''}
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            }
+            if (window.lucide) lucide.createIcons();
+        } catch (err) {
+            console.error('Error fetching timeline:', err);
+            if (container) container.innerHTML = '<div class="text-xs text-rose-500 text-center py-4">Failed to load activity timeline.</div>';
+        }
+    }
+    function closeHistoryModal() { 
+        const modal = document.getElementById('history-modal');
+        if (modal) modal.classList.add('hidden'); 
+    }
+
+    const searchInputEl = document.getElementById('search-input');
+    if (searchInputEl) searchInputEl.addEventListener('input', () => { clearAllSelections(); currentContactPage = 1; loadContacts(1); });
+    const filterStatusEl = document.getElementById('filter-status');
+    if (filterStatusEl) filterStatusEl.addEventListener('change', () => { clearAllSelections(); currentContactPage = 1; loadContacts(1); });
+    const filterGroupEl = document.getElementById('filter-group');
+    if (filterGroupEl) filterGroupEl.addEventListener('change', () => { clearAllSelections(); currentContactPage = 1; loadContacts(1); });
+    const filterEmailStatusEl = document.getElementById('filter-email-status');
+    if (filterEmailStatusEl) filterEmailStatusEl.addEventListener('change', () => { clearAllSelections(); currentContactPage = 1; loadContacts(1); });
+    const filterSourceEl = document.getElementById('filter-source');
+    if (filterSourceEl) filterSourceEl.addEventListener('change', () => { clearAllSelections(); currentContactPage = 1; loadContacts(1); });
+
+    // Initialize from URL query parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialGroup = urlParams.get('group');
+    if (initialGroup) {
+        const groupSelect = document.getElementById('filter-group');
+        if (groupSelect) {
+            groupSelect.value = initialGroup;
+            updateGroupContext();
+        }
+    }
+
+    // --- ODK Central Contacts Synchronization ---
+    let isSyncingODK = false;
+
+    async function updateSyncStatusDisplay() {
+        const lastSyncLabel = document.getElementById('odk-last-synced-time');
+        if (!lastSyncLabel) return;
+        try {
+            const res = await fetch('/api/contacts/sync-status/');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.last_synced_at) {
+                    const dt = new Date(data.last_synced_at);
+                    const timeStr = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    lastSyncLabel.textContent = `Synced: ${timeStr}`;
+                    lastSyncLabel.className = 'text-emerald-600 font-semibold';
+                } else {
+                    lastSyncLabel.textContent = 'Ready';
+                    lastSyncLabel.className = 'text-slate-500 font-normal';
+                }
+            }
+        } catch (e) {
+            console.debug('Failed to fetch sync status:', e);
+        }
+    }
+
+    async function syncContactsFromODK(isAuto = false) {
+        if (isSyncingODK) return;
+        isSyncingODK = true;
+
+        const btn = document.getElementById('btn-sync-odk');
+        const icon = document.getElementById('sync-odk-icon');
+        const btnText = document.getElementById('sync-odk-btn-text');
+        const lastSyncLabel = document.getElementById('odk-last-synced-time');
+
+        if (!isAuto && btn) {
+            btn.disabled = true;
+            btn.classList.add('opacity-80', 'cursor-not-allowed');
+            if (icon) icon.classList.add('animate-spin');
+            if (btnText) btnText.textContent = 'Syncing...';
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s safety timeout
+
+        try {
+            const csrfToken = (typeof getCsrfToken === 'function') ? getCsrfToken() : '';
+            const res = await fetch('/api/contacts/sync-odk/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.message || data.error || `HTTP ${res.status}`);
+            }
+
+            // Update timestamp indicator
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            if (lastSyncLabel) {
+                lastSyncLabel.textContent = `Synced: ${timeStr}`;
+                lastSyncLabel.className = 'text-emerald-600 font-semibold';
+            }
+
+            // Show toast summary
+            if (!isAuto) {
+                if (data.status === 'in_progress') {
+                    showToast(data.message || 'Sync already running in background...', 'info');
+                } else {
+                    const toastMsg = data.message || `ODK Sync complete: ${data.contacts_marked_used || 0} contact(s) marked USED.`;
+                    showToast(toastMsg, data.status === 'error' ? 'error' : (data.status === 'warning' ? 'warning' : 'success'));
+                }
+            } else if (data.contacts_marked_used > 0 || data.new_contacts_imported > 0) {
+                showToast(`ODK Auto-Sync: ${data.contacts_marked_used || 0} contact(s) marked USED.`, 'info');
+            }
+
+            // Reload contacts table to show latest changes
+            if (typeof loadContacts === 'function') {
+                loadContacts(currentContactPage || 1);
+            }
+
+        } catch (err) {
+            clearTimeout(timeoutId);
+            console.error('ODK Sync error:', err);
+            if (!isAuto) {
+                const isTimeout = err.name === 'AbortError';
+                showToast(isTimeout ? 'ODK Sync timed out after 25 seconds.' : (err.message || 'Failed to sync with ODK Central'), 'error');
+            }
+        } finally {
+            isSyncingODK = false;
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-80', 'cursor-not-allowed');
+                if (icon) icon.classList.remove('animate-spin');
+                if (btnText) btnText.textContent = 'Sync from ODK';
+            }
+        }
+    }
+
+    // Automated periodic sync every 5 minutes (300,000 ms) while viewing the contacts page
+    const ODK_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+    setInterval(function() {
+        syncContactsFromODK(true);
+    }, ODK_SYNC_INTERVAL_MS);
+
+    // Initial load: sync status & contacts
+    updateSyncStatusDisplay();
+    loadContacts(1);
+</script>
+{% endblock %}

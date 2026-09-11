@@ -1,0 +1,530 @@
+{% extends "base.html" %}
+
+{% block page_title %}Senders & Email Providers{% endblock %}
+
+{% block header_actions %}
+<button onclick="openAddSenderModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-xl shadow-md shadow-blue-500/20 flex items-center gap-2 transition-all">
+    <i data-lucide="plus" class="w-4 h-4"></i>
+    Add Sender
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <table class="w-full text-left border-collapse text-sm">
+            <thead>
+                <tr class="bg-slate-50/75 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <th class="py-3.5 px-6">Sender</th>
+                    <th class="py-3.5 px-6">Provider Type</th>
+                    <th class="py-3.5 px-6">Sending Limits</th>
+                    <th class="py-3.5 px-6 text-center">Today's Volume</th>
+                    <th class="py-3.5 px-6 text-center">Status</th>
+                    <th class="py-3.5 px-6 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="senders-tbody" class="divide-y divide-slate-100">
+                <tr><td colspan="6" class="py-8 text-center text-slate-400">Loading senders...</td></tr>
+            </tbody>
+        </table>
+        <!-- Pagination Container -->
+        <div id="senders-pagination-container"></div>
+    </div>
+</div>
+
+<!-- Add Sender Modal -->
+<div id="sender-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+            <h3 class="text-base font-bold text-slate-900">Add Sender Account</h3>
+            <button onclick="closeAddSenderModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <form onsubmit="submitAddSender(event)" class="space-y-4 pt-4 text-sm">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">From Name *</label>
+                    <input type="text" id="snd-name" required placeholder="IRIS Communications" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">From Email *</label>
+                    <input type="email" id="snd-email" required placeholder="survey@company.com" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Reply-To Email</label>
+                <input type="email" id="snd-reply-to" placeholder="support@company.com" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Email Provider Type</label>
+                <select id="snd-provider" onchange="onSenderProviderChange('add')" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                    <option value="BREVO">Brevo (Sendinblue) - Supports SMTP Relay &amp; API Key</option>
+                    <option value="SMTP">Custom SMTP Server</option>
+                    <option value="SANDBOX">Internal Sandbox / Webmail Simulator (Zero Config)</option>
+                    <option value="MAILGUN">Mailgun API v3</option>
+                    <option value="SENDGRID">SendGrid API v3</option>
+                    <option value="POSTMARK">Postmark API</option>
+                    <option value="AMAZON_SES">Amazon SES</option>
+                </select>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Host / Domain</label>
+                    <input type="text" id="snd-host" placeholder="smtp.provider.com" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Port</label>
+                    <input type="number" id="snd-port" value="587" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Username / API Identifier</label>
+                <input type="text" id="snd-username" placeholder="API key or SMTP username" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Password or API Secret Key</label>
+                <input type="password" id="snd-key" placeholder="Stored AES-256 encrypted at rest" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Daily Limit</label>
+                    <input type="number" id="snd-daily" value="80000" class="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Hourly Limit</label>
+                    <input type="number" id="snd-hourly" value="3000" class="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Per-Minute Limit</label>
+                    <input type="number" id="snd-minute" value="50" class="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                </div>
+            </div>
+            <div class="pt-4 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onclick="closeAddSenderModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50">Cancel</button>
+                <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md">Save Sender</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Sender Modal -->
+<div id="edit-sender-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+            <div class="flex items-center gap-2">
+                <div class="p-1.5 bg-blue-50 text-blue-600 rounded-lg"><i data-lucide="edit" class="w-4 h-4"></i></div>
+                <h3 class="text-base font-bold text-slate-900">Edit Sender: <span id="edit-modal-title" class="text-blue-600"></span></h3>
+            </div>
+            <button onclick="closeEditSenderModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <form onsubmit="submitEditSender(event)" class="space-y-4 pt-4 text-sm">
+            <input type="hidden" id="edit-snd-id">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">From Name *</label>
+                    <input type="text" id="edit-snd-name" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">From Email *</label>
+                    <input type="email" id="edit-snd-email" required class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Reply-To Email</label>
+                <input type="email" id="edit-snd-reply-to" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Email Provider Type</label>
+                <select id="edit-snd-provider" onchange="onSenderProviderChange('edit')" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                    <option value="BREVO">Brevo (Sendinblue) - Supports SMTP Relay &amp; API Key</option>
+                    <option value="SMTP">Custom SMTP Server</option>
+                    <option value="SANDBOX">Internal Sandbox / Webmail Simulator (Zero Config)</option>
+                    <option value="MAILGUN">Mailgun API v3</option>
+                    <option value="SENDGRID">SendGrid API v3</option>
+                    <option value="POSTMARK">Postmark API</option>
+                    <option value="AMAZON_SES">Amazon SES</option>
+                </select>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Host / Domain</label>
+                    <input type="text" id="edit-snd-host" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Port</label>
+                    <input type="number" id="edit-snd-port" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Username / API Identifier</label>
+                <input type="text" id="edit-snd-username" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Password or API Secret Key <span class="font-normal text-slate-400">(leave blank to keep current)</span></label>
+                <input type="password" id="edit-snd-key" placeholder="••••••••••••••••••••••••" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Daily Limit</label>
+                    <input type="number" id="edit-snd-daily" class="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Hourly Limit</label>
+                    <input type="number" id="edit-snd-hourly" class="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Per-Minute Limit</label>
+                    <input type="number" id="edit-snd-minute" class="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                </div>
+            </div>
+            <div class="flex items-center gap-2 pt-1">
+                <input type="checkbox" id="edit-snd-active" class="rounded text-blue-600 border-slate-300">
+                <label for="edit-snd-active" class="text-xs font-bold text-slate-700 cursor-pointer">Sender Active &amp; Available for Campaigns</label>
+            </div>
+            <div class="pt-4 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onclick="closeEditSenderModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50">Cancel</button>
+                <button type="submit" id="btn-update-sender" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Send Test Email -->
+<div id="test-email-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+            <div class="flex items-center gap-2">
+                <div class="p-2 bg-blue-50 text-blue-600 rounded-xl"><i data-lucide="send" class="w-4 h-4"></i></div>
+                <h3 class="text-base font-bold text-slate-900">Send Test Email</h3>
+            </div>
+            <button onclick="closeTestEmailModal()" class="text-slate-400 hover:text-slate-600 p-1"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <form onsubmit="submitSendTestEmail(event)" class="space-y-4 pt-4 text-sm">
+            <input type="hidden" id="test-sender-id">
+            <div class="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs text-slate-600">
+                <div class="text-[10px] uppercase font-bold text-slate-400 mb-0.5">Sending via Sender</div>
+                <div class="font-bold text-slate-900 text-sm" id="test-sender-name"></div>
+                <div class="text-slate-500 font-mono text-[11px]" id="test-sender-email"></div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Recipient Email Address *</label>
+                <input type="email" id="test-recipient-email" required placeholder="e.g. your-name@gmail.com" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium">
+                <p class="text-[11px] text-slate-400 mt-1">Enter the email address where you want to receive the live verification test email.</p>
+            </div>
+            <div class="pt-4 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onclick="closeTestEmailModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-semibold hover:bg-slate-50 text-xs">Cancel</button>
+                <button type="submit" id="btn-confirm-send-test" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md text-xs flex items-center gap-1.5 transition-all">
+                    <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                    <span>Send Test Email</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let currentSendersPage = 1;
+    let currentSendersPageSize = 25;
+    let loadedSenders = [];
+
+    function changeSendersPage(page) {
+        currentSendersPage = page;
+        loadSenders(currentSendersPage);
+    }
+
+    function changeSendersPageSize(newSize) {
+        currentSendersPageSize = newSize;
+        currentSendersPage = 1;
+        loadSenders(1);
+    }
+
+    async function loadSenders(page = 1) {
+        currentSendersPage = page;
+        try {
+            const res = await fetch(`/api/senders/?page=${currentSendersPage}&page_size=${currentSendersPageSize}`);
+            const data = await res.json();
+            loadedSenders = data.results || (Array.isArray(data) ? data : []);
+            const tbody = document.getElementById('senders-tbody');
+
+            const totalCount = data.count !== undefined ? data.count : loadedSenders.length;
+            const totalPages = data.total_pages || Math.ceil(totalCount / currentSendersPageSize) || 1;
+            const currentPage = data.current_page || currentSendersPage;
+
+            if (!loadedSenders || loadedSenders.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">No senders configured yet. Click "+ Add Sender" above to create one.</td></tr>';
+                renderPagination({
+                    containerId: 'senders-pagination-container',
+                    totalCount: 0
+                });
+                return;
+            }
+
+            tbody.innerHTML = loadedSenders.map(s => `
+                <tr class="hover:bg-slate-50 text-xs">
+                    <td class="py-4 px-6">
+                        <div class="font-bold text-slate-900">${escapeHtml(s.name)}</div>
+                        <div class="text-slate-500">${escapeHtml(s.email)}</div>
+                    </td>
+                    <td class="py-4 px-6 font-semibold text-slate-700">${escapeHtml(s.provider_type_display || s.provider_type)}</td>
+                    <td class="py-4 px-6 text-slate-500 font-mono text-[11px]">
+                        ${s.per_minute_limit}/min &bull; ${s.hourly_limit}/hr &bull; ${s.daily_limit}/day
+                    </td>
+                    <td class="py-4 px-6 text-center font-bold text-slate-800 font-mono">${s.today_sent || 0}</td>
+                    <td class="py-4 px-6 text-center">
+                        <span class="px-2 py-0.5 rounded-full font-bold ${s.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}">
+                            ${s.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                    </td>
+                    <td class="py-4 px-6 text-right space-x-1.5 whitespace-nowrap">
+                        <button onclick="openTestModal(${s.id}, '${escapeHtml(s.name)}', '${escapeHtml(s.email)}')" class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg shadow-sm text-xs transition-colors" title="Send a test email to any recipient">
+                            Test
+                        </button>
+                        <button onclick="openEditSenderModal(${s.id})" class="px-2.5 py-1 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded-lg shadow-sm text-xs transition-colors" title="Edit sender settings">
+                            Edit
+                        </button>
+                        <button onclick="deleteSender(${s.id}, '${escapeHtml(s.name)}')" class="px-2.5 py-1 bg-white border border-rose-200 hover:bg-rose-50 text-rose-600 hover:text-rose-700 font-bold rounded-lg shadow-sm text-xs transition-colors" title="Delete sender">
+                            Delete
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+
+            renderPagination({
+                containerId: 'senders-pagination-container',
+                totalCount: totalCount,
+                currentPage: currentPage,
+                pageSize: currentSendersPageSize,
+                totalPages: totalPages,
+                onPageChange: 'changeSendersPage',
+                onPageSizeChange: 'changeSendersPageSize'
+            });
+
+            lucide.createIcons();
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    // ─── Test Email Modal ──────────────────────────────────────────────────────
+    function openTestModal(id, name, fromEmail) {
+        document.getElementById('test-sender-id').value = id;
+        document.getElementById('test-sender-name').textContent = name;
+        document.getElementById('test-sender-email').textContent = `From: ${fromEmail}`;
+        document.getElementById('test-recipient-email').value = '';
+        document.getElementById('test-email-modal').classList.remove('hidden');
+        document.getElementById('test-recipient-email').focus();
+    }
+
+    function closeTestEmailModal() {
+        document.getElementById('test-email-modal').classList.add('hidden');
+    }
+
+    async function submitSendTestEmail(e) {
+        e.preventDefault();
+        const id = document.getElementById('test-sender-id').value;
+        const toEmail = document.getElementById('test-recipient-email').value.trim();
+        if (!toEmail) return;
+
+        const btn = document.getElementById('btn-confirm-send-test');
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> <span>Sending...</span>';
+        lucide.createIcons();
+
+        try {
+            const res = await fetch(`/api/senders/${id}/test_connection/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ to_email: toEmail })
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || `Test email sent to ${toEmail}!`, 'success');
+                closeTestEmailModal();
+            } else {
+                alert('Test Email Failed: ' + (data.message || data.error || JSON.stringify(data)));
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Error sending test email: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+            lucide.createIcons();
+        }
+    }
+
+    // ─── Edit Sender Modal ─────────────────────────────────────────────────────
+    function openEditSenderModal(id) {
+        const s = loadedSenders.find(x => x.id === id);
+        if (!s) return;
+
+        document.getElementById('edit-snd-id').value = s.id;
+        document.getElementById('edit-modal-title').textContent = s.name;
+        document.getElementById('edit-snd-name').value = s.name || '';
+        document.getElementById('edit-snd-email').value = s.email || '';
+        document.getElementById('edit-snd-reply-to').value = s.reply_to || '';
+        document.getElementById('edit-snd-provider').value = s.provider_type || 'BREVO';
+        document.getElementById('edit-snd-host').value = s.host || '';
+        document.getElementById('edit-snd-port').value = s.port || 587;
+        document.getElementById('edit-snd-username').value = s.username || '';
+        document.getElementById('edit-snd-key').value = '';
+        document.getElementById('edit-snd-daily').value = s.daily_limit || 80000;
+        document.getElementById('edit-snd-hourly').value = s.hourly_limit || 3000;
+        document.getElementById('edit-snd-minute').value = s.per_minute_limit || 50;
+        document.getElementById('edit-snd-active').checked = !!s.is_active;
+
+        document.getElementById('edit-sender-modal').classList.remove('hidden');
+        onSenderProviderChange('edit');
+    }
+
+    function closeEditSenderModal() {
+        document.getElementById('edit-sender-modal').classList.add('hidden');
+    }
+
+    async function submitEditSender(e) {
+        e.preventDefault();
+        const id = document.getElementById('edit-snd-id').value;
+        const payload = {
+            name: document.getElementById('edit-snd-name').value.trim(),
+            email: document.getElementById('edit-snd-email').value.trim(),
+            reply_to: document.getElementById('edit-snd-reply-to').value.trim(),
+            provider_type: document.getElementById('edit-snd-provider').value,
+            host: document.getElementById('edit-snd-host').value.trim(),
+            port: parseInt(document.getElementById('edit-snd-port').value) || 587,
+            username: document.getElementById('edit-snd-username').value.trim(),
+            daily_limit: parseInt(document.getElementById('edit-snd-daily').value) || 80000,
+            hourly_limit: parseInt(document.getElementById('edit-snd-hourly').value) || 3000,
+            per_minute_limit: parseInt(document.getElementById('edit-snd-minute').value) || 50,
+            is_active: document.getElementById('edit-snd-active').checked
+        };
+
+        const newKey = document.getElementById('edit-snd-key').value;
+        if (newKey && newKey.trim()) {
+            payload.password_or_key = newKey.trim();
+        }
+
+        try {
+            const res = await fetch(`/api/senders/${id}/`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                showToast('Sender updated successfully', 'success');
+                closeEditSenderModal();
+                loadSenders(currentSendersPage);
+            } else {
+                const err = await res.json();
+                alert('Error updating sender: ' + JSON.stringify(err));
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Failed to update sender: ' + err.message);
+        }
+    }
+
+    // ─── Delete Sender ─────────────────────────────────────────────────────────
+    async function deleteSender(id, name) {
+        if (!confirm(`Are you sure you want to delete sender account "${name}"?`)) return;
+        try {
+            const res = await fetch(`/api/senders/${id}/`, {
+                method: 'DELETE',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            });
+            if (res.ok) {
+                showToast(`Sender "${name}" deleted`, 'success');
+                loadSenders(currentSendersPage);
+            } else {
+                const data = await res.json();
+                showToast(data.error || 'Failed to delete sender', 'error');
+            }
+        } catch (err) {
+            console.error(err);
+            showToast('Error deleting sender', 'error');
+        }
+    }
+
+    // ─── Provider Change Helpers ───────────────────────────────────────────────
+    function onSenderProviderChange(prefix = 'add') {
+        const pId = prefix === 'edit' ? 'edit-snd-provider' : 'snd-provider';
+        const hId = prefix === 'edit' ? 'edit-snd-host' : 'snd-host';
+        const ptId = prefix === 'edit' ? 'edit-snd-port' : 'snd-port';
+        const uId = prefix === 'edit' ? 'edit-snd-username' : 'snd-username';
+        const kId = prefix === 'edit' ? 'edit-snd-key' : 'snd-key';
+
+        const p = document.getElementById(pId).value;
+        const hostEl = document.getElementById(hId);
+        const portEl = document.getElementById(ptId);
+        const userEl = document.getElementById(uId);
+        const keyEl = document.getElementById(kId);
+
+        if (p === 'BREVO') {
+            if (!hostEl.value || hostEl.value === 'smtp.provider.com') hostEl.value = 'smtp-relay.brevo.com';
+            if (!portEl.value) portEl.value = '587';
+            userEl.placeholder = 'e.g. afd2aa001@smtp-brevo.com (or leave empty if using REST API key)';
+            keyEl.placeholder = prefix === 'edit' ? 'Leave empty to keep existing key' : 'Paste your Brevo SMTP key (xsmtps-...) or API key (xkeysib-...)';
+        } else if (p === 'SMTP') {
+            userEl.placeholder = 'SMTP username or login email';
+            keyEl.placeholder = prefix === 'edit' ? 'Leave empty to keep existing password' : 'SMTP password or key';
+        }
+    }
+
+    function openAddSenderModal() { 
+        document.getElementById('sender-modal').classList.remove('hidden'); 
+        onSenderProviderChange('add');
+    }
+    function closeAddSenderModal() { document.getElementById('sender-modal').classList.add('hidden'); }
+
+    async function submitAddSender(e) {
+        e.preventDefault();
+        const payload = {
+            name: document.getElementById('snd-name').value.trim(),
+            email: document.getElementById('snd-email').value.trim(),
+            reply_to: document.getElementById('snd-reply-to').value.trim(),
+            provider_type: document.getElementById('snd-provider').value,
+            host: document.getElementById('snd-host').value.trim(),
+            port: parseInt(document.getElementById('snd-port').value) || 587,
+            username: document.getElementById('snd-username').value.trim(),
+            password_or_key: document.getElementById('snd-key').value.trim(),
+            daily_limit: parseInt(document.getElementById('snd-daily').value) || 80000,
+            hourly_limit: parseInt(document.getElementById('snd-hourly').value) || 3000,
+            per_minute_limit: parseInt(document.getElementById('snd-minute').value) || 50,
+        };
+        const res = await fetch('/api/senders/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+            showToast('Sender added', 'success');
+            closeAddSenderModal();
+            loadSenders(1);
+        } else {
+            const err = await res.json();
+            alert('Error: ' + JSON.stringify(err));
+        }
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    loadSenders(1);
+</script>
+{% endblock %}

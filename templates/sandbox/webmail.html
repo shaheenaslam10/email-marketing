@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block page_title %}Interactive Testing Sandbox & Webmail Simulator{% endblock %}
+
+{% block header_actions %}
+<div class="flex items-center gap-2">
+    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+        <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+        Sandbox Mode Active
+    </span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <!-- Top Row: Interactive ODK Survey Submission Simulator -->
+    <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
+        <div class="flex items-start justify-between">
+            <div>
+                <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <i data-lucide="clipboard-check" class="w-5 h-5 text-indigo-600"></i>
+                    Simulate Survey Respondent Submitting Survey in ODK Central
+                </h2>
+                <p class="text-xs text-slate-500 mt-1">
+                    Enter a respondent's <strong>JobID</strong> below to simulate them completing their ODK Central survey. When synchronized, their status will automatically flip from <span class="text-amber-600 font-bold">UNUSED</span> to <span class="text-emerald-600 font-bold">USED</span>, and all future automated reminders will immediately stop.
+                </p>
+            </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 pt-2">
+            <input type="text" id="sim-job-id" value="JOB-1025" placeholder="e.g. JOB-1025" class="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono font-bold w-44 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <input type="email" id="sim-email" value="ali@example.com" placeholder="Respondent email" class="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium w-52 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            
+            <button onclick="submitSimulatedSurvey()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1.5 transition-all">
+                <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                1. Submit Survey to Mock ODK
+            </button>
+
+            <button onclick="triggerSandboxODKSync()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1.5 transition-all">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                2. Run ODK Sync Now
+            </button>
+        </div>
+
+        <div id="sim-status-box" class="hidden p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-700"></div>
+    </div>
+
+    <!-- Webmail Inbox (Split Pane) -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[600px]">
+        <!-- Email List (Left Column) -->
+        <div class="lg:col-span-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm flex flex-col overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+                <h3 class="font-bold text-sm text-slate-900 flex items-center gap-2">
+                    <i data-lucide="inbox" class="w-4 h-4 text-blue-600"></i>
+                    Captured Outgoing Emails ({{ emails|length }})
+                </h3>
+                <button onclick="location.reload()" class="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500" title="Refresh Inbox">
+                    <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto divide-y divide-slate-100">
+                {% if emails %}
+                    {% for em in emails %}
+                    <div onclick="selectEmail('{{ em.id }}')" class="email-item-row p-4 hover:bg-blue-50/50 cursor-pointer transition-colors" id="em-row-{{ em.id }}">
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="font-bold text-slate-900 truncate">{{ em.to_email }}</span>
+                            <span class="text-[10px] text-slate-400">{{ em.created_at|date:"H:i:s" }}</span>
+                        </div>
+                        <div class="font-semibold text-xs text-slate-700 mt-1 truncate">{{ em.subject }}</div>
+                        <div class="text-[11px] text-slate-400 mt-0.5 truncate">{{ em.text_content|default:"HTML Survey Email" }}</div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="p-8 text-center text-xs text-slate-400">
+                        No emails sent in Sandbox yet. Send a test email from the Campaign Wizard or launch a campaign to see it captured here!
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Email Inspector / Viewer (Right Column) -->
+        <div class="lg:col-span-7 bg-white rounded-3xl border border-slate-200/80 shadow-sm flex flex-col overflow-hidden">
+            <div id="email-viewer-header" class="p-5 border-b border-slate-100 hidden">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <h4 id="view-subject" class="text-base font-bold text-slate-900"></h4>
+                        <div class="text-xs text-slate-500 mt-1">
+                            To: <strong id="view-to" class="text-slate-800"></strong> |
+                            From: <span id="view-from"></span> |
+                            Time: <span id="view-time"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex-1 p-6 overflow-y-auto bg-slate-50/40" id="email-preview-container">
+                <div class="h-full flex items-center justify-center text-slate-400 text-xs">
+                    Select an email on the left to preview rendered HTML and test tracking links.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    async function selectEmail(id) {
+        document.querySelectorAll('.email-item-row').forEach(r => r.classList.remove('bg-blue-50', 'border-l-4', 'border-blue-600'));
+        const row = document.getElementById(`em-row-${id}`);
+        if (row) row.classList.add('bg-blue-50', 'border-l-4', 'border-blue-600');
+
+        const res = await fetch(`/sandbox/webmail/${id}/`);
+        const data = await res.json();
+
+        document.getElementById('email-viewer-header').classList.remove('hidden');
+        document.getElementById('view-subject').textContent = data.subject;
+        document.getElementById('view-to').textContent = data.to_email;
+        document.getElementById('view-from').textContent = data.from;
+        document.getElementById('view-time').textContent = data.created_at;
+
+        const container = document.getElementById('email-preview-container');
+        const content = data.html_content || `<div style="font-family:sans-serif;padding:16px;white-space:pre-wrap;">${data.text_content || 'No content'}</div>`;
+        container.innerHTML = `
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <iframe id="preview-email-iframe" src="/sandbox/webmail/${id}/?raw=1" class="w-full min-h-[480px] border-0 rounded-xl"></iframe>
+            </div>
+        `;
+        const iframeEl = document.getElementById('preview-email-iframe');
+        if (iframeEl) {
+            iframeEl.srcdoc = content;
+        }
+    }
+
+    async function submitSimulatedSurvey() {
+        const jobId = document.getElementById('sim-job-id').value;
+        const email = document.getElementById('sim-email').value;
+        const statusBox = document.getElementById('sim-status-box');
+
+        const formData = new FormData();
+        formData.append('job_id', jobId);
+        formData.append('email', email);
+
+        const res = await fetch('/sandbox/api/odk/submit/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCsrfToken() },
+            body: formData
+        });
+        const data = await res.json();
+        statusBox.classList.remove('hidden');
+        statusBox.innerHTML = `&check; Simulated survey response submitted to Mock ODK Central!<br>Submission ID: <strong>${data.submission_id}</strong><br>JobID: <strong>${data.job_id}</strong><br><span class="text-blue-600 font-bold">Now click '2. Run ODK Sync Now' to detect completion and update contact status!</span>`;
+        showToast('Survey submitted to Mock ODK!');
+    }
+
+    async function triggerSandboxODKSync() {
+        const statusBox = document.getElementById('sim-status-box');
+        statusBox.classList.remove('hidden');
+        statusBox.textContent = 'Syncing ODK Central...';
+
+        // Fetch forms to get first form ID
+        const fRes = await fetch('/api/odk/forms/');
+        const forms = (await fRes.json()).results || [];
+        if (forms.length === 0) {
+            statusBox.textContent = 'No ODK form configured. Go to ODK Central -> Discover first.';
+            return;
+        }
+
+        const formId = forms[0].id;
+        const sRes = await fetch(`/api/odk/forms/${formId}/sync/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCsrfToken() }
+        });
+        const syncData = await sRes.json();
+        statusBox.innerHTML = `
+            &check; ODK Sync Completed in ${syncData.duration_seconds}s!<br>
+            Submissions Checked: <strong>${syncData.submissions_checked}</strong><br>
+            Contacts Marked USED: <strong class="text-emerald-600 font-bold">${syncData.contacts_marked_used}</strong><br>
+            Unmatched JobIDs: <strong>${syncData.unmatched_job_ids}</strong>
+        `;
+        showToast(`ODK Sync Complete! ${syncData.contacts_marked_used} contacts marked as USED`);
+    }
+
+    // Auto-select first email if available
+    const firstRow = document.querySelector('.email-item-row');
+    if (firstRow) {
+        firstRow.click();
+    }
+</script>
+{% endblock %}
