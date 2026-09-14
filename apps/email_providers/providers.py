@@ -155,6 +155,14 @@ class BrevoProvider(BaseEmailProvider):
             self.sender.use_tls = True
             return SMTPProvider(self.sender).send_email(to_email, subject, html_content, text_content, reply_to, headers, tags)
 
+        # NOTE: Brevo offers no per-message, API, SMTP-header, or per-link
+        # opt-out from its transactional link rewriting. Whatever branded
+        # URLs we put in htmlContent are wrapped into sendibt*.com links by
+        # Brevo after receipt. Stopping that rewrite is only possible at the
+        # Brevo account level (support ticket -> compliance review); it
+        # cannot be done from application code. Our own /c/ tracking still
+        # records the click (with recipient/campaign attribution) when the
+        # recipient follows Brevo's redirect through to us.
         payload = {
             "sender": {"name": self.sender.name, "email": self.sender.email},
             "to": [{"email": to_email}],
@@ -241,6 +249,10 @@ class MailgunProvider(BaseEmailProvider):
                 data[f"h:{k}"] = v
         if tags:
             data["o:tag"] = tags
+        if getattr(self.sender, 'disable_provider_click_tracking', False):
+            # Per-message opt-out: Mailgun leaves our links untouched while
+            # our own tracking stays fully active.
+            data["o:tracking-clicks"] = "no"
 
         try:
             resp = requests.post(url, auth=("api", self.sender.password_or_key), data=data, timeout=15)
@@ -301,6 +313,12 @@ class SendGridProvider(BaseEmailProvider):
             payload["headers"] = headers
         if tags:
             payload["categories"] = tags
+        if getattr(self.sender, 'disable_provider_click_tracking', False):
+            # Per-message opt-out: SendGrid leaves our links untouched while
+            # our own tracking stays fully active.
+            payload["tracking_settings"] = {
+                "click_tracking": {"enable": False, "enable_text": False}
+            }
 
         try:
             resp = requests.post(
@@ -365,6 +383,10 @@ class PostmarkProvider(BaseEmailProvider):
             payload["Headers"] = [{"Name": k, "Value": v} for k, v in headers.items()]
         if tags and len(tags) > 0:
             payload["Tag"] = tags[0]
+        if getattr(self.sender, 'disable_provider_click_tracking', False):
+            # Explicit opt-out (Postmark never rewrites links unless link
+            # tracking was enabled at the server level).
+            payload["TrackLinks"] = "None"
 
         try:
             resp = requests.post(

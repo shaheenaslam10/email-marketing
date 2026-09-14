@@ -38,6 +38,17 @@ class Sender(models.Model):
 
     is_active = models.BooleanField(default=True)
 
+    # When True, providers that support a per-message opt-out are asked to
+    # skip their own click-link rewriting so recipients see our branded
+    # tracking URLs. Our own tracking stays fully active. Currently
+    # honored by SendGrid, Mailgun and Postmark. Brevo offers no such
+    # mechanism for transactional mail: its link rewriting can only be
+    # addressed at the Brevo account level (support ticket), never via API.
+    disable_provider_click_tracking = models.BooleanField(
+        default=False,
+        help_text="Ask the provider to skip its own click-link rewriting (SendGrid/Mailgun/Postmark). Our tracking stays active. No effect on Brevo, which offers no API opt-out."
+    )
+
     # Rate limiting (Section 25 & 52)
     daily_limit = models.PositiveIntegerField(default=80000)
     hourly_limit = models.PositiveIntegerField(default=3000)
