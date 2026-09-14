@@ -92,6 +92,73 @@ def render_content_variables(
     return rendered
 
 
+# Placeholder token inserted by Step 5 "Insert Tracked URL" (direct insert,
+# no modal). Resolved per recipient at render time into that recipient's
+# first-party /c/<token> URL, delivered as plain text (see wrap_tracking).
+TRACKING_URL_PLACEHOLDER = 'survey_tracking_url'
+
+
+def expand_tracking_placeholders(html_content, campaign=None, contact=None):
+    """Expands {{survey_tracking_url}} into Insert-URL tracked anchors.
+
+    Runs BEFORE render_content_variables at every dispatch/preview/test
+    site. Each placeholder becomes a data-track="true" anchor carrying the
+    resolved destination, so the existing wrap_tracking path creates the
+    recipient's CampaignTrackingLink and emits the short URL as plain
+    text (no <a> element, nothing for providers to rewrite).
+
+    Destination: the contact's personal survey URL ({{url}}) when set,
+    else the campaign destination URL. Unresolvable placeholders (and any
+    occurrence nested inside an existing <a> element, which would nest
+    anchors) resolve to "".
+    """
+    if not html_content or TRACKING_URL_PLACEHOLDER not in html_content.lower():
+        return html_content
+
+    from apps.tracking.utils import validate_destination_url, get_shortener_base_url
+
+    destination = ''
+    if contact is not None:
+        try:
+            personal = render_content_variables('{{url}}', contact)
+        except Exception:
+            personal = ''
+        if personal and personal.strip() and '{{' not in personal:
+            destination = personal.strip()
+    if not destination and campaign is not None:
+        destination = (campaign.destination_url or '').strip()
+    if destination and '{{' in destination and contact is not None:
+        try:
+            destination = render_content_variables(destination, contact).strip()
+        except Exception:
+            destination = ''
+
+    pattern = re.compile(
+        r'\{\{\s*' + TRACKING_URL_PLACEHOLDER + r'\s*\}\}', re.IGNORECASE)
+    if not destination or not validate_destination_url(destination):
+        return pattern.sub('', html_content)
+
+    base = get_shortener_base_url().rstrip('/')
+    anchor = (
+        '<a href="' + base + '/c/{unique_link}" data-original-url="' +
+        html_module.escape(destination, quote=True) +
+        '" data-link-name="Survey Tracking Link" data-track="true">'
+        'survey_tracking_url</a>'
+    )
+
+    parts = []
+    last = 0
+    for match in pattern.finditer(html_content):
+        prefix = html_content[:match.start()].lower()
+        opened = max(prefix.rfind('<a '), prefix.rfind('<a>'))
+        inside_anchor = opened > prefix.rfind('</a>')
+        parts.append(html_content[last:match.start()])
+        parts.append('' if inside_anchor else anchor)
+        last = match.end()
+    parts.append(html_content[last:])
+    return ''.join(parts)
+
+
 def wrap_tracking(
     html_content: str,
     token_str: str,

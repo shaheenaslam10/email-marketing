@@ -10,7 +10,7 @@ from apps.contacts.models import Contact
 from apps.senders.models import Sender
 from apps.groups.models import TestEmailGroup, ContactGroup
 from apps.email_providers.providers import get_email_provider
-from .services import render_content_variables, validate_campaign_variables, wrap_tracking
+from .services import render_content_variables, validate_campaign_variables, wrap_tracking, expand_tracking_placeholders
 from apps.reminders.services import launch_initial_campaign
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,8 @@ class CampaignViewSet(viewsets.ModelViewSet):
         req_html = request.data.get('html_content') if request.data.get('html_content') is not None else campaign.html_content
 
         subject = render_content_variables(req_subject, contact)
-        html_content = render_content_variables(req_html, contact)
+        html_content = render_content_variables(
+            expand_tracking_placeholders(req_html, campaign, contact), contact)
         # Resolve tracked links with the same generation logic as dispatch
         # so the preview shows real branded /c/ recipient URLs instead of
         # a literal {unique_link} placeholder (browser URL serialization
@@ -103,7 +104,8 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 campaign = None
 
         rendered_subject = render_content_variables(subject, contact)
-        rendered_html = render_content_variables(html_content, contact)
+        rendered_html = render_content_variables(
+            expand_tracking_placeholders(html_content, campaign, contact), contact)
         rendered_html = wrap_tracking(
             html_content=rendered_html,
             token_str=str(uuid.uuid4()),
@@ -247,10 +249,11 @@ class CampaignViewSet(viewsets.ModelViewSet):
             if contact:
                 # Interpolate sample contact data but customize recipient email
                 rendered_subj = f"[TEST] {render_content_variables(base_subject, contact)}"
-                rendered_html = render_content_variables(base_html, contact)
+                rendered_html = render_content_variables(
+                    expand_tracking_placeholders(base_html, campaign, contact), contact)
             else:
                 rendered_subj = f"[TEST] {base_subject}"
-                rendered_html = base_html
+                rendered_html = expand_tracking_placeholders(base_html, campaign, None)
 
             # Resolve tracked links exactly like production dispatch so test
             # emails carry working URLs (recipient-specific short URLs when a

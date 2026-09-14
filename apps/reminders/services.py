@@ -7,7 +7,7 @@ from apps.contacts.models import Contact
 from apps.reminders.models import ReminderConfiguration, ReminderCycle
 from apps.tracking.models import EmailEvent, TrackingToken
 from apps.email_providers.providers import get_email_provider
-from apps.campaigns.services import render_content_variables, wrap_tracking
+from apps.campaigns.services import render_content_variables, wrap_tracking, expand_tracking_placeholders
 from apps.odk.services import run_odk_sync, sync_dataset_entities
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,8 @@ def process_single_campaign_message(message_id: int) -> bool:
 
     # Render personalization variables (Section 14 & 35)
     rendered_subject = render_content_variables(subject_tmpl, contact)
-    rendered_html = render_content_variables(html_tmpl, contact)
+    rendered_html = render_content_variables(
+        expand_tracking_placeholders(html_tmpl, campaign, contact), contact)
     rendered_text = render_content_variables(text_tmpl, contact) if text_tmpl else ""
 
     # Wrap tracking pixel and click redirects (Section 75 & 76, Requirement 2 & 10)

@@ -239,7 +239,7 @@
             </div>
             <!-- Insert Variable & Tracked URL Buttons (Requirement 1) -->
             <div class="flex items-center gap-2.5 flex-wrap">
-                <button type="button" onclick="openTrackedUrlModal('wizard')" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition-all cursor-pointer" title="Insert Tracked URL with unique per-recipient short link">
+                <button type="button" onclick="insertSurveyTrackingPlaceholder()" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition-all cursor-pointer" title="Insert Tracked URL with unique per-recipient short link">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
                     <span>Insert Tracked URL</span>
                 </button>
@@ -929,6 +929,31 @@
         if (!tag) return;
         const range = quill.getSelection(true);
         quill.insertText(range.index, tag);
+    }
+
+    // Step 5 "Insert Tracked URL": direct placeholder insert (no modal).
+    // The token is resolved per recipient at render time into that
+    // recipient's first-party /c/<token> URL, delivered as plain text.
+    // (Braces are concatenated so Django does not parse the token.)
+    function insertSurveyTrackingPlaceholder() {
+        if (typeof quill === 'undefined' || !quill) return;
+        const token = '{' + '{survey_tracking_url}' + '}';
+        let index = Math.max(0, quill.getLength() - 1);
+        try {
+            const range = quill.getSelection();
+            if (range && typeof range.index === 'number') {
+                index = range.index;
+                if (range.length > 0) quill.deleteText(index, range.length);
+            }
+        } catch (e) {
+            index = Math.max(0, quill.getLength() - 1);
+        }
+        quill.insertText(index, token);
+        quill.setSelection(index + token.length, 0);
+        quill.focus();
+        if (typeof showToast === 'function') {
+            showToast('Survey tracking placeholder inserted', 'success');
+        }
     }
 
     function toggleReminderFields(enabled) {
