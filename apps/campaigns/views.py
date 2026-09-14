@@ -270,7 +270,11 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 subject=rendered_subj,
                 html_content=final_test_html,
                 text_content="",
-                reply_to=reply_to
+                reply_to=reply_to,
+                log_context={
+                    'campaign_id': campaign.id if campaign else None,
+                    'source': 'test-email',
+                },
             )
 
             # Record in SandboxEmail for instant in-app webmail inspection

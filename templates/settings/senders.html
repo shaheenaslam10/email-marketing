@@ -66,6 +66,9 @@
                     <option value="AMAZON_SES">Amazon SES</option>
                 </select>
             </div>
+            <div id="snd-brevo-note" class="hidden p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 leading-relaxed">
+                <span class="font-bold">Brevo rewrites every link</span> into its own <span class="font-mono">sendibt3.com</span> tracking URLs, and no API opt-out exists. Delivery and our click tracking still work, but recipients will see Brevo's domain instead of our branded URLs. For branded visible links use Custom SMTP, Amazon SES, Postmark, or SendGrid / Mailgun with rewriting disabled below.
+            </div>
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Host / Domain</label>
@@ -147,6 +150,9 @@
                     <option value="POSTMARK">Postmark API</option>
                     <option value="AMAZON_SES">Amazon SES</option>
                 </select>
+            </div>
+            <div id="edit-snd-brevo-note" class="hidden p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 leading-relaxed">
+                <span class="font-bold">Brevo rewrites every link</span> into its own <span class="font-mono">sendibt3.com</span> tracking URLs, and no API opt-out exists. Delivery and our click tracking still work, but recipients will see Brevo's domain instead of our branded URLs. For branded visible links use Custom SMTP, Amazon SES, Postmark, or SendGrid / Mailgun with rewriting disabled below.
             </div>
             <div class="grid grid-cols-2 gap-3">
                 <div>
@@ -473,6 +479,8 @@
         const kId = prefix === 'edit' ? 'edit-snd-key' : 'snd-key';
 
         const p = document.getElementById(pId).value;
+        const noteEl = document.getElementById(prefix === 'edit' ? 'edit-snd-brevo-note' : 'snd-brevo-note');
+        if (noteEl) noteEl.classList.toggle('hidden', p !== 'BREVO');
         const hostEl = document.getElementById(hId);
         const portEl = document.getElementById(ptId);
         const userEl = document.getElementById(uId);
