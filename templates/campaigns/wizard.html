@@ -89,6 +89,37 @@
                 <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Internal Description</label>
                 <textarea id="wz-desc" rows="3" placeholder="Notes for research team" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">{{ campaign.description|default:'' }}</textarea>
             </div>
+            <!-- Campaign Tracking Link (shareable, anonymous) -->
+            <div class="p-4 bg-gradient-to-r from-indigo-50/60 to-blue-50/40 border border-indigo-200/70 rounded-2xl space-y-3">
+                <div class="flex items-center gap-2">
+                    <div class="p-1.5 bg-indigo-600 text-white rounded-lg">
+                        <i data-lucide="link-2" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <span class="text-xs font-bold text-slate-900 block">Campaign Tracking Link <span class="text-[10px] font-semibold text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded-md ml-1">shareable</span></span>
+                        <span class="text-[11px] text-slate-500">One stable short URL per link for ads, social media, QR codes & partner sites. Visits are tracked anonymously, then redirected to your destination. (For per-recipient tracked URLs inside the email itself, use “Insert Tracked URL” in Step 5.)</span>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Default Destination URL</label>
+                    <input type="text" id="wz-destination-url" value="{{ campaign.destination_url|default:'' }}" placeholder="https://www.odk.iriscommunications.cloud/project/12/forms/registration" class="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs">
+                    <span class="text-[11px] text-slate-400 mt-1 block">Saved with the campaign. Must start with http:// or https://. Individual links may override it.</span>
+                </div>
+                <div id="tracking-links-unsaved-note" class="{% if campaign %}hidden{% endif %} p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 font-medium">
+                    Save this campaign as a draft first, then you can generate shareable tracking links here.
+                </div>
+                <div id="tracking-links-manager" class="{% if not campaign %}hidden{% endif %} space-y-2.5">
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <input type="text" id="new-tracking-link-name" placeholder="Link label e.g. Facebook Ad (optional)" class="flex-1 px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <input type="text" id="new-tracking-link-url" placeholder="Override destination (optional)" class="flex-1 px-3.5 py-2 bg-white border border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <button type="button" onclick="createTrackingLink()" id="btn-create-tracking-link" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 flex items-center gap-1.5 transition-all whitespace-nowrap">
+                            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                            Generate Link
+                        </button>
+                    </div>
+                    <div id="tracking-links-list" class="space-y-2"></div>
+                </div>
+            </div>
         </div>
         <div class="flex justify-end pt-4 border-t border-slate-100">
             <button onclick="setWizardStep(2)" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-md">Next: Sender &rarr;</button>
@@ -426,6 +457,8 @@
                 <div><strong>Type:</strong> <span id="rev-type"></span></div>
                 <div><strong>Subject:</strong> <span id="rev-subject"></span></div>
                 <div><strong>Sender:</strong> <span id="rev-sender"></span></div>
+                <div><strong>Destination URL:</strong> <span id="rev-destination" class="font-mono break-all"></span></div>
+                <div><strong>Tracking Links:</strong> <span id="rev-tracking-links"></span></div>
             </div>
             <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
                 <div class="font-bold text-slate-700 uppercase">Automation & Audience</div>
@@ -1019,6 +1052,165 @@
         prevBody.innerHTML = replacer(html);
     }
 
+    let cachedTrackingLinks = [];
+
+    async function loadTrackingLinks() {
+        const listEl = document.getElementById('tracking-links-list');
+        const managerEl = document.getElementById('tracking-links-manager');
+        const unsavedNote = document.getElementById('tracking-links-unsaved-note');
+        if (!listEl) return;
+        if (!campaignId) {
+            if (managerEl) managerEl.classList.add('hidden');
+            if (unsavedNote) unsavedNote.classList.remove('hidden');
+            return;
+        }
+        if (managerEl) managerEl.classList.remove('hidden');
+        if (unsavedNote) unsavedNote.classList.add('hidden');
+        try {
+            const res = await fetch(`/api/campaigns/${campaignId}/tracking-links/`);
+            if (!res.ok) throw new Error('list failed');
+            const data = await res.json();
+            cachedTrackingLinks = data.links || [];
+            if (data.destination_url && !document.getElementById('wz-destination-url').value) {
+                document.getElementById('wz-destination-url').value = data.destination_url;
+            }
+            renderTrackingLinks();
+        } catch (err) {
+            console.warn('Tracking links load notice:', err);
+            listEl.innerHTML = '<p class="text-[11px] text-slate-400 italic">Could not load tracking links.</p>';
+        }
+    }
+
+    function renderTrackingLinks() {
+        const listEl = document.getElementById('tracking-links-list');
+        if (!listEl) return;
+        if (!cachedTrackingLinks.length) {
+            listEl.innerHTML = '<p class="text-[11px] text-slate-400 italic">No tracking links yet — generate one above and share it anywhere.</p>';
+            return;
+        }
+        listEl.innerHTML = cachedTrackingLinks.map(l => `
+            <div class="p-3 bg-white border border-slate-200 rounded-xl space-y-1.5 shadow-2xs ${l.is_active ? '' : 'opacity-60'}">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="font-bold text-slate-800 text-xs">${escapeHtml(l.name || 'Untitled link')}</span>
+                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${l.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}">${l.is_active ? 'Active' : 'Disabled'}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <code class="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-[11px] text-indigo-700 font-bold break-all">${escapeHtml(l.short_url)}</code>
+                    <button type="button" onclick="copyTrackingLink('${escapeHtml(l.short_url)}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 rounded-lg text-[11px] font-bold transition-colors" title="Copy link">Copy</button>
+                </div>
+                <div class="flex items-center justify-between text-[11px] text-slate-500">
+                    <span>${l.click_count} click${l.click_count === 1 ? '' : 's'} (${l.human_click_count} human${l.bot_click_count ? `, ${l.bot_click_count} bot` : ''})${l.destination_url ? ` &bull; &rarr; <span class="font-mono">${escapeHtml(l.destination_url.length > 48 ? l.destination_url.slice(0, 48) + '…' : l.destination_url)}</span>` : ' &bull; &rarr; campaign default'}</span>
+                    <span class="flex items-center gap-1.5">
+                        <button type="button" onclick="toggleTrackingLink(${l.id}, ${l.is_active ? 'false' : 'true'})" class="font-bold text-indigo-600 hover:text-indigo-800">${l.is_active ? 'Disable' : 'Enable'}</button>
+                        <span class="text-slate-300">|</span>
+                        <button type="button" onclick="regenerateTrackingLink(${l.id})" class="font-bold text-slate-500 hover:text-slate-800" title="Issue a new URL (invalidates the old one)">Regenerate</button>
+                        <span class="text-slate-300">|</span>
+                        <button type="button" onclick="deleteTrackingLink(${l.id})" class="font-bold text-rose-500 hover:text-rose-700">Delete</button>
+                    </span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async function createTrackingLink() {
+        if (!campaignId) {
+            showToast('Save the campaign as a draft first.', 'error');
+            return;
+        }
+        const nameInput = document.getElementById('new-tracking-link-name');
+        const urlInput = document.getElementById('new-tracking-link-url');
+        const btn = document.getElementById('btn-create-tracking-link');
+        if (btn) btn.disabled = true;
+        try {
+            const res = await fetch(`/api/campaigns/${campaignId}/tracking-links/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify({
+                    name: nameInput ? nameInput.value.trim() : '',
+                    destination_url: urlInput ? urlInput.value.trim() : ''
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                const msg = data.destination_url ? data.destination_url.join(' ') : (data.error || JSON.stringify(data));
+                throw new Error(msg);
+            }
+            if (nameInput) nameInput.value = '';
+            if (urlInput) urlInput.value = '';
+            showToast('Tracking link generated — copy & share it anywhere!', 'success');
+            await loadTrackingLinks();
+        } catch (err) {
+            showToast('Could not generate link: ' + err.message, 'error');
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    async function toggleTrackingLink(linkId, enable) {
+        try {
+            const res = await fetch(`/api/campaigns/${campaignId}/tracking-links/${linkId}/`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify({ is_active: !!enable })
+            });
+            if (!res.ok) throw new Error('update failed');
+            await loadTrackingLinks();
+        } catch (err) {
+            showToast('Could not update link.', 'error');
+        }
+    }
+
+    async function regenerateTrackingLink(linkId) {
+        if (!confirm('Regenerate this link? The old URL will stop working immediately.')) return;
+        try {
+            const res = await fetch(`/api/campaigns/${campaignId}/tracking-links/${linkId}/regenerate/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            });
+            if (!res.ok) throw new Error('regenerate failed');
+            showToast('New tracking URL issued.', 'success');
+            await loadTrackingLinks();
+        } catch (err) {
+            showToast('Could not regenerate link.', 'error');
+        }
+    }
+
+    async function deleteTrackingLink(linkId) {
+        if (!confirm('Delete this tracking link? Its URL will stop working.')) return;
+        try {
+            const res = await fetch(`/api/campaigns/${campaignId}/tracking-links/${linkId}/`, {
+                method: 'DELETE',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            });
+            if (!res.ok) throw new Error('delete failed');
+            showToast('Tracking link deleted.', 'info');
+            await loadTrackingLinks();
+        } catch (err) {
+            showToast('Could not delete link.', 'error');
+        }
+    }
+
+    function copyTrackingLink(url) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(url).then(
+                () => showToast('Tracking URL copied to clipboard!', 'success'),
+                () => showToast('Copy failed — select the URL manually.', 'error')
+            );
+        } else {
+            const tmp = document.createElement('textarea');
+            tmp.value = url;
+            document.body.appendChild(tmp);
+            tmp.select();
+            try {
+                document.execCommand('copy');
+                showToast('Tracking URL copied to clipboard!', 'success');
+            } catch (e) {
+                showToast('Copy failed — select the URL manually.', 'error');
+            }
+            document.body.removeChild(tmp);
+        }
+    }
+
     function prepareReview() {
         document.getElementById('rev-name').textContent = document.getElementById('wz-name').value;
         document.getElementById('rev-type').textContent = document.getElementById('wz-type').options[document.getElementById('wz-type').selectedIndex].text;
@@ -1029,6 +1221,11 @@
         const remOn = document.getElementById('wz-rem-enabled').checked;
         document.getElementById('rev-reminders').textContent = remOn ? `Every ${document.getElementById('wz-rem-interval-val').value} ${document.getElementById('wz-rem-interval-unit').value} (Max: ${document.getElementById('wz-rem-max').value})` : 'Disabled';
         document.getElementById('rev-rule').textContent = document.getElementById('wz-init-rule').value;
+        document.getElementById('rev-destination').textContent = document.getElementById('wz-destination-url')?.value || '(not set)';
+        const activeLinks = cachedTrackingLinks.filter(l => l.is_active);
+        document.getElementById('rev-tracking-links').textContent = cachedTrackingLinks.length
+            ? `${cachedTrackingLinks.length} link${cachedTrackingLinks.length === 1 ? '' : 's'} (${activeLinks.length} active)`
+            : 'None';
     }
 
     let currentTestMode = 'direct';
@@ -1447,6 +1644,7 @@
             name: document.getElementById('wz-name').value,
             campaign_type: document.getElementById('wz-type').value,
             description: document.getElementById('wz-desc').value,
+            destination_url: document.getElementById('wz-destination-url')?.value?.trim() || '',
             sender: parseInt(document.getElementById('wz-sender').value),
             odk_dataset: (document.getElementById('wz-odk-dataset') && document.getElementById('wz-odk-dataset').value) ? parseInt(document.getElementById('wz-odk-dataset').value) : null,
             odk_form: null,
@@ -1682,6 +1880,10 @@
             if (!isNaN(stepNum) && stepNum >= 1 && stepNum <= 8) {
                 setWizardStep(stepNum);
             }
+        }
+
+        if (campaignId) {
+            loadTrackingLinks();
         }
 
         if (targetMode === 'send') {

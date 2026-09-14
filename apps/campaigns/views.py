@@ -448,6 +448,102 @@ class CampaignViewSet(viewsets.ModelViewSet):
         campaign.save(update_fields=['status'])
         return Response({'status': 'cancelled', 'message': 'Campaign cancelled.'})
 
+    @action(detail=True, methods=['get', 'post'], url_path='tracking-links')
+    def tracking_links(self, request, pk=None):
+        """
+        Campaign-level shareable tracking links (anonymous, for external
+        distribution). GET lists, POST generates a new link.
+        """
+        from apps.tracking.models import CampaignTrackingLink
+        from apps.tracking.serializers import CampaignTrackingLinkSerializer
+        from apps.tracking.utils import (
+            generate_unique_tracking_token, build_campaign_short_url,
+        )
+        campaign = self.get_object()
+
+        if request.method == 'GET':
+            links = campaign.tracking_links.all().order_by('-created_at')
+            return Response({
+                'campaign_id': campaign.id,
+                'destination_url': campaign.destination_url or '',
+                'links': CampaignTrackingLinkSerializer(links, many=True).data,
+            })
+
+        serializer = CampaignTrackingLinkSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        token = generate_unique_tracking_token(CampaignTrackingLink, length=8)
+        link = CampaignTrackingLink.objects.create(
+            campaign=campaign,
+            name=(serializer.validated_data.get('name') or '').strip(),
+            destination_url=(serializer.validated_data.get('destination_url') or '').strip(),
+            is_active=serializer.validated_data.get('is_active', True),
+            tracking_token=token,
+            short_url=build_campaign_short_url(token, request),
+        )
+        return Response(
+            CampaignTrackingLinkSerializer(link).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(
+        detail=True, methods=['get', 'put', 'patch', 'delete'],
+        url_path=r'tracking-links/(?P<link_id>[^/.]+)',
+    )
+    def tracking_link_detail(self, request, pk=None, link_id=None):
+        """Retrieve, update (label/destination/active flag) or delete one link."""
+        from apps.tracking.models import CampaignTrackingLink
+        from apps.tracking.serializers import CampaignTrackingLinkSerializer
+        campaign = self.get_object()
+        link = CampaignTrackingLink.objects.filter(
+            pk=link_id, campaign=campaign
+        ).first()
+        if not link:
+            return Response(
+                {'error': 'Tracking link not found for this campaign.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if request.method == 'DELETE':
+            link.delete()
+            return Response(
+                {'status': 'deleted', 'message': 'Tracking link deleted.'},
+                status=status.HTTP_200_OK,
+            )
+
+        partial = request.method == 'PATCH'
+        serializer = CampaignTrackingLinkSerializer(
+            link, data=request.data, partial=partial
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(CampaignTrackingLinkSerializer(link).data)
+
+    @action(
+        detail=True, methods=['post'],
+        url_path=r'tracking-links/(?P<link_id>[^/.]+)/regenerate',
+    )
+    def tracking_link_regenerate(self, request, pk=None, link_id=None):
+        """Issues a fresh token/URL for a link (invalidates the old URL)."""
+        from apps.tracking.models import CampaignTrackingLink
+        from apps.tracking.serializers import CampaignTrackingLinkSerializer
+        from apps.tracking.utils import (
+            generate_unique_tracking_token, build_campaign_short_url,
+        )
+        campaign = self.get_object()
+        link = CampaignTrackingLink.objects.filter(
+            pk=link_id, campaign=campaign
+        ).first()
+        if not link:
+            return Response(
+                {'error': 'Tracking link not found for this campaign.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        token = generate_unique_tracking_token(CampaignTrackingLink, length=8)
+        link.tracking_token = token
+        link.short_url = build_campaign_short_url(token, request)
+        link.save(update_fields=['tracking_token', 'short_url', 'updated_at'])
+        return Response(CampaignTrackingLinkSerializer(link).data)
+
     @action(detail=True, methods=['get'])
     def validate_vars(self, request, pk=None):
         campaign = self.get_object()
@@ -502,6 +598,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
             text_content=orig.text_content,
             track_opens=orig.track_opens,
             track_clicks=orig.track_clicks,
+            destination_url=orig.destination_url,
             created_by=request.user if request.user.is_authenticated else orig.created_by,
         )
         new_campaign.groups.set(orig.groups.all())
@@ -567,6 +664,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 text_content=orig.text_content,
                 track_opens=orig.track_opens,
                 track_clicks=orig.track_clicks,
+                destination_url=orig.destination_url,
                 created_by=request.user if request.user.is_authenticated else orig.created_by,
             )
             new_c.groups.set(orig.groups.all())

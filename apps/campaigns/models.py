@@ -48,6 +48,15 @@ class Campaign(models.Model):
     track_opens = models.BooleanField(default=True)
     track_clicks = models.BooleanField(default=True)
 
+    # Default destination for campaign-level shareable tracking links
+    # (apps.tracking.CampaignTrackingLink falls back to this when the
+    # link itself has no destination configured). Must be http(s).
+    destination_url = models.TextField(
+        blank=True,
+        default='',
+        help_text='Default destination URL (http:// or https://) used by this campaign\'s shareable tracking links.'
+    )
+
     class SendMode(models.TextChoices):
         IMMEDIATE = 'IMMEDIATE', 'Send Now'
         SCHEDULED = 'SCHEDULED', 'Schedule for later'

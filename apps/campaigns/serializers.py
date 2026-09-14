@@ -31,12 +31,22 @@ class CampaignSerializer(serializers.ModelSerializer):
             'odk_dataset', 'odk_dataset_name',
             'completion_status_source', 'groups', 'initial_recipient_rule',
             'subject', 'preview_text', 'html_content', 'text_content',
-            'track_opens', 'track_clicks', 'scheduled_at', 'started_at',
+            'track_opens', 'track_clicks', 'destination_url',
+            'scheduled_at', 'started_at',
             'send_mode', 'batch_size', 'batch_interval_minutes',
             'completed_at', 'reminder_config', 'total_messages_count',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'status', 'started_at', 'completed_at', 'created_at', 'updated_at']
+
+    def validate_destination_url(self, value):
+        from apps.tracking.utils import validate_destination_url
+        value = (value or '').strip()
+        if value and not validate_destination_url(value):
+            raise serializers.ValidationError(
+                'Destination URL must be a valid absolute http:// or https:// URL.'
+            )
+        return value
 
     def create(self, validated_data):
         reminder_data = validated_data.pop('reminder_config', None)
