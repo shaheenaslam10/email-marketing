@@ -26,8 +26,14 @@ class BaseEmailProvider(ABC):
         reply_to: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Sends an email and returns SendResult."""
+        """
+        Sends an email and returns SendResult.
+        log_context carries optional diagnostic correlation ids
+        (campaign_id/message_id/source); it is only ever logged in
+        sanitized form and never sent to the provider.
+        """
         pass
 
     @abstractmethod

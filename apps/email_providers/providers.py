@@ -3,13 +3,59 @@ import uuid
 import logging
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Optional, Dict, Tuple, List
+from typing import Optional, Dict, Tuple, List, Any
 import requests
 from django.conf import settings
 from .base import BaseEmailProvider, SendResult
 from apps.sandbox.models import SandboxEmail
 
 logger = logging.getLogger(__name__)
+
+
+def _mask_email(to_email):
+    """Masks the local part of an address for safe logging (a***@domain)."""
+    try:
+        local, domain = (to_email or '').rsplit('@', 1)
+        if not local or not domain:
+            return '***'
+        return local[0] + '***@' + domain
+    except Exception:
+        return '***'
+
+
+def _summarize_outbound_html(html_content):
+    """
+    Sanitized pre-send diagnostic: URL-class counts only.
+    Never includes content, tokens, keys, or personal information.
+    """
+    body = html_content or ''
+    lowered = body.lower()
+    short_base = (getattr(settings, 'SHORTENER_BASE_URL', '') or '').rstrip('/').lower()
+    return {
+        'html_bytes': len(body),
+        'branded_c_urls': lowered.count(short_base + '/c/') if short_base else 0,
+        'unresolved_placeholders': body.count('{unique_link}') + body.count('{unique-link}'),
+        'contains_provider_tracking_domain': any(
+            d in lowered for d in ('sendibt', 'sendinblue.com', 'click.brevo.com')
+        ),
+    }
+
+
+def _log_outbound_diagnostic(sender, provider, smtp_mode, to_email, html_content, log_context):
+    """One sanitized log line per send: proves what was handed to the provider."""
+    ctx = log_context or {}
+    logger.info(
+        "Outbound email via %s sender_id=%s mode=%s disable_provider_click_tracking=%s "
+        "campaign_id=%s message_id=%s to=%s summary=%s",
+        provider,
+        getattr(sender, 'id', None),
+        'smtp-relay' if smtp_mode else 'api',
+        getattr(sender, 'disable_provider_click_tracking', False),
+        ctx.get('campaign_id'),
+        ctx.get('message_id'),
+        _mask_email(to_email),
+        _summarize_outbound_html(html_content),
+    )
 
 
 class SandboxProvider(BaseEmailProvider):
@@ -24,6 +70,7 @@ class SandboxProvider(BaseEmailProvider):
         reply_to: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         try:
             msg_id = f"sandbox-{uuid.uuid4()}"
@@ -60,6 +107,7 @@ class SMTPProvider(BaseEmailProvider):
         reply_to: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         try:
             msg = MIMEMultipart('alternative')
@@ -146,8 +194,13 @@ class BrevoProvider(BaseEmailProvider):
         reply_to: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        if self._is_smtp_config():
+        smtp_mode = self._is_smtp_config()
+        _log_outbound_diagnostic(
+            self.sender, 'brevo', smtp_mode, to_email, html_content, log_context,
+        )
+        if smtp_mode:
             if not self.sender.host:
                 self.sender.host = "smtp-relay.brevo.com"
             if not self.sender.port:
@@ -231,6 +284,7 @@ class MailgunProvider(BaseEmailProvider):
         reply_to: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         domain = self.sender.api_domain or self.sender.email.split('@')[-1]
         url = f"https://api.mailgun.net/v3/{domain}/messages"
@@ -298,6 +352,7 @@ class SendGridProvider(BaseEmailProvider):
         reply_to: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         payload = {
             "personalizations": [{"to": [{"email": to_email}]}],
@@ -368,6 +423,7 @@ class PostmarkProvider(BaseEmailProvider):
         reply_to: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         payload = {
             "From": self.sender.display_from,
@@ -434,6 +490,7 @@ class AmazonSESProvider(BaseEmailProvider):
         reply_to: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         # If host is provided, route via SMTP endpoint for Amazon SES
         if self.sender.host:

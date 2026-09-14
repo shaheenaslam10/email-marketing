@@ -123,7 +123,12 @@ def process_single_campaign_message(message_id: int) -> bool:
         subject=rendered_subject,
         html_content=final_html,
         text_content=rendered_text,
-        reply_to=sender.reply_to
+        reply_to=sender.reply_to,
+        log_context={
+            'campaign_id': campaign.id,
+            'message_id': message.id,
+            'message_type': message.message_type,
+        },
     )
 
     now = timezone.now()

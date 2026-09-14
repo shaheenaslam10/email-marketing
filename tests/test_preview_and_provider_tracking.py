@@ -240,6 +240,93 @@ class ProviderTrackingOptOutTests(TestCase):
                         'contactPixelTrackingConsent', 'trackClicks'):
                 self.assertNotIn(key, json.dumps(payload))
 
+class ProviderFlagChainTests(TestCase):
+    """Part 5: prove the sender flag travels API -> DB -> provider payload."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='chain_admin', email='chain@example.com', password='password123'
+        )
+        self.client = Client()
+        self.client.force_login(self.user)
+
+    def test_flag_chain_api_to_sendgrid_payload(self):
+        resp = self.client.post(
+            '/api/senders/',
+            data=json.dumps({
+                'name': 'Chain Sender',
+                'email': 'survey@marketing.iriscommunications.cloud',
+                'provider_type': Sender.ProviderType.SENDGRID,
+                'disable_provider_click_tracking': True,
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        sender = Sender.objects.get(pk=resp.json()['id'])
+        self.assertTrue(sender.disable_provider_click_tracking)
+
+        with patch('apps.email_providers.providers.requests.post') as mocked:
+            mocked.return_value = fake_response(202)
+            SendGridProvider(sender).send_email('a@example.com', 'S', '<p>Hi</p>')
+        payload = mocked.call_args.kwargs['json']
+        self.assertEqual(
+            payload['tracking_settings']['click_tracking'],
+            {'enable': False, 'enable_text': False})
+
+        # Flipping the flag off via API removes the opt-out from payloads.
+        resp = self.client.patch(
+            f'/api/senders/{sender.id}/',
+            data=json.dumps({'disable_provider_click_tracking': False}),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        sender.refresh_from_db()
+        with patch('apps.email_providers.providers.requests.post') as mocked:
+            mocked.return_value = fake_response(202)
+            SendGridProvider(sender).send_email('a@example.com', 'S', '<p>Hi</p>')
+        self.assertNotIn('tracking_settings', mocked.call_args.kwargs['json'])
+
+    def test_flag_has_no_effect_on_brevo_request(self):
+        # Proves Case 4 for Brevo specifically: the flag is stored and read,
+        # but Brevo's API offers no tracking opt-out, so the request is
+        # byte-identical with the flag on or off.
+        payloads = []
+        for flag in (False, True):
+            sender = make_sender(Sender.ProviderType.BREVO, flag=flag)
+            with patch('apps.email_providers.providers.requests.post') as mocked:
+                mocked.return_value = fake_response(201, {'messageId': 'b1'})
+                BrevoProvider(sender).send_email('a@example.com', 'S', '<p>Hi</p>')
+            payloads.append(mocked.call_args.kwargs['json'])
+        self.assertEqual(payloads[0], payloads[1])
+        self.assertEqual(
+            sorted(payloads[0].keys()), ['htmlContent', 'sender', 'subject', 'to'])
+
+    def test_brevo_send_emits_sanitized_diagnostic(self):
+        sender = make_sender(Sender.ProviderType.BREVO, flag=True)
+        base = get_shortener_base_url().rstrip('/')
+        html = '<p>Hi</p><a href="' + base + '/c/AbC123Xy">Start</a></p>'
+        with patch('apps.email_providers.providers.requests.post') as mocked:
+            mocked.return_value = fake_response(201, {'messageId': 'b1'})
+            with self.assertLogs('apps.email_providers.providers', level='INFO') as logs:
+                BrevoProvider(sender).send_email(
+                    'qa@example.com', 'S', html,
+                    log_context={'campaign_id': 7, 'message_id': 42})
+        self.assertTrue(mocked.called)
+        line = logs.output[0]
+        self.assertIn('sender_id=%d' % sender.id, line)
+        self.assertIn('mode=api', line)
+        self.assertIn('disable_provider_click_tracking=True', line)
+        self.assertIn('campaign_id=7', line)
+        self.assertIn('message_id=42', line)
+        self.assertIn("'branded_c_urls': 1", line)
+        self.assertIn("'unresolved_placeholders': 0", line)
+        self.assertIn("'contains_provider_tracking_domain': False", line)
+        # Sanitized: masked recipient, no tokens, no secrets, no raw HTML.
+        self.assertIn('q***@example.com', line)
+        self.assertNotIn('qa@example.com', line)
+        self.assertNotIn('AbC123Xy', line)
+        self.assertNotIn('test-secret', line)
+
     def test_sender_flag_round_trip_via_api(self):
         user = User.objects.create_user(
             username='sg_admin', email='sg@example.com', password='password123')
