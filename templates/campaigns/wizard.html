@@ -1013,6 +1013,7 @@
                 body: JSON.stringify({
                     contact_id: selectedId ? parseInt(selectedId) : null,
                     group_ids: groupIds,
+                    campaign_id: (typeof campaignId !== 'undefined' && campaignId) ? campaignId : null,
                     subject: subject,
                     html_content: html
                 })

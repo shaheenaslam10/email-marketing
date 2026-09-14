@@ -44,6 +44,18 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
         subject = render_content_variables(req_subject, contact)
         html_content = render_content_variables(req_html, contact)
+        # Resolve tracked links with the same generation logic as dispatch
+        # so the preview shows real branded /c/ recipient URLs instead of
+        # a literal {unique_link} placeholder (browser URL serialization
+        # would otherwise display it as %7Bunique_link%7D).
+        html_content = wrap_tracking(
+            html_content=html_content,
+            token_str=str(uuid.uuid4()),
+            track_opens=campaign.track_opens,
+            track_clicks=campaign.track_clicks,
+            campaign=campaign,
+            contact=contact,
+        )
 
         return Response({
             'contact': {
@@ -78,8 +90,28 @@ class CampaignViewSet(viewsets.ModelViewSet):
         subject = request.data.get('subject', '')
         html_content = request.data.get('html_content', '')
 
+        # Optional campaign context (wizard passes campaign_id when editing
+        # a saved campaign) so preview links use the same branded /c/
+        # recipient URLs as dispatch. Without a campaign the same
+        # wrap_tracking() fallback as standalone test emails applies.
+        campaign = None
+        campaign_id = request.data.get('campaign_id') or request.data.get('campaign_pk')
+        if campaign_id:
+            try:
+                campaign = Campaign.objects.filter(pk=int(campaign_id)).first()
+            except (TypeError, ValueError):
+                campaign = None
+
         rendered_subject = render_content_variables(subject, contact)
         rendered_html = render_content_variables(html_content, contact)
+        rendered_html = wrap_tracking(
+            html_content=rendered_html,
+            token_str=str(uuid.uuid4()),
+            track_opens=campaign.track_opens if campaign else True,
+            track_clicks=campaign.track_clicks if campaign else True,
+            campaign=campaign,
+            contact=contact,
+        )
 
         return Response({
             'contact': {

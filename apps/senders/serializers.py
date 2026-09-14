@@ -11,7 +11,8 @@ class SenderSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'email', 'reply_to', 'provider_type', 'provider_type_display',
             'host', 'port', 'username', 'password_or_key', 'use_tls', 'use_ssl',
-            'api_domain', 'api_region', 'is_active', 'daily_limit', 'hourly_limit',
+            'api_domain', 'api_region', 'is_active', 'disable_provider_click_tracking',
+            'daily_limit', 'hourly_limit',
             'per_minute_limit', 'today_sent', 'this_hour_sent', 'this_minute_sent',
             'last_sent_at', 'created_at', 'updated_at'
         ]
