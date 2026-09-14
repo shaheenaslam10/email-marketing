@@ -1,3 +1,4 @@
+import html as html_module
 import json
 import urllib.parse
 from django.test import TestCase, Client
@@ -40,6 +41,23 @@ def tracked_email_html(dest=ODK_URL):
         'data-original-url="' + stored + '" data-link-name="ODK Survey Link" '
         'data-track="true" target="_blank">Start Survey</a></p>'
     )
+
+
+def extract_mailed_url(body, marker):
+    """Extracts a bare-text URL containing marker from rendered mail HTML.
+
+    First-party tracked links ship as plain text (no anchor element), so
+    the mailed URL is delimited by whitespace or HTML punctuation.
+    """
+    delims = '''"'<>()'''
+    i = body.find(marker)
+    start = i
+    while start > 0 and (not body[start - 1].isspace()) and body[start - 1] not in delims:
+        start -= 1
+    end = i + len(marker)
+    while end < len(body) and (not body[end].isspace()) and body[end] not in delims:
+        end += 1
+    return html_module.unescape(body[start:end])
 
 
 class RecipientCLinkTests(TestCase):
@@ -310,12 +328,11 @@ class RecipientCLinkTests(TestCase):
         self.assertNotIn('{unique_link}', html)
         self.assertNotIn('sendibt3.com', html)
         self.assertIn('/c/', html)
+        self.assertNotIn('<a', html)
 
         # The mailed URL must be directly clickable to the exact destination.
-        i = html.find('/c/')
-        start = html.rfind('href="', 0, i) + len('href="')
-        end = html.find('"', start)
-        parts = urllib.parse.urlparse(html[start:end])
+        mailed = extract_mailed_url(html, '/c/')
+        parts = urllib.parse.urlparse(mailed)
         path = parts.path + ('?' + parts.query if parts.query else '')
         click = self.anon.get(path, HTTP_USER_AGENT=HUMAN_UA)
         self.assertEqual(click.status_code, 302)
