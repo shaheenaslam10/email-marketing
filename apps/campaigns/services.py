@@ -118,7 +118,9 @@ def wrap_tracking(
     # {unique_link} placeholder can never ship literally: when tracking is
     # disabled at link level (data-track="false") or campaign level
     # (track_clicks=False), tracked anchors resolve to their direct
-    # destination instead of a short URL.
+    # destination instead of a short URL. Anchors with explicit
+    # data-track="true" (Step 5 Track URL = ON) resolve to the short URL
+    # as plain text with no <a> element, so providers cannot rewrite it.
     if True:
         from apps.tracking.models import ShortenedLink, CampaignTrackingLink
 
@@ -144,6 +146,12 @@ def wrap_tracking(
             # Explicit per-link opt-out?
             track_m = re.search(r'data-track=["\'](true|false)["\']', tag_attrs, re.IGNORECASE)
             tracking_disabled = bool(track_m and track_m.group(1).lower() == 'false')
+            # Explicit per-link opt-in (Step 5 Insert URL with Track URL = ON):
+            # first-party IRIS tracking. These links are emitted as plain
+            # text (no <a> element) so delivery providers receive body text
+            # they cannot link-rewrite; recipient mail apps auto-link the
+            # bare URL and clicks still reach our /c/<token> endpoint.
+            tracking_explicit = bool(track_m and track_m.group(1).lower() == 'true')
 
             # Resolve the {unique_link} placeholder to the real destination.
             # Only a bare placeholder with no data-original-url (legacy content
@@ -233,6 +241,11 @@ def wrap_tracking(
                 # Standalone preview or no contact
                 encoded_url = urllib.parse.quote(target_url, safe='')
                 final_url = f"{base_url}/t/click/{token_str}/?url={encoded_url}"
+
+            # First-party tracked links (Insert URL, Track URL = ON) render
+            # as plain text with no anchor element (see tracking_explicit).
+            if tracking_explicit:
+                return html_module.escape(final_url)
 
             # Replace href attribute
             new_tag_attrs = re.sub(r'href=["\'][^"\']+["\']', f'href="{final_url}"', tag_attrs, count=1, flags=re.IGNORECASE)

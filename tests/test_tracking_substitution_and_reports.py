@@ -45,6 +45,23 @@ def tracked_email_html(dest=ODK_URL, enabled=True):
     )
 
 
+def extract_mailed_url(body, marker):
+    """Extracts a bare-text URL containing marker from rendered mail HTML.
+
+    First-party tracked links ship as plain text (no anchor element), so
+    the mailed URL is delimited by whitespace or HTML punctuation.
+    """
+    delims = '''"'<>()'''
+    i = body.find(marker)
+    start = i
+    while start > 0 and (not body[start - 1].isspace()) and body[start - 1] not in delims:
+        start -= 1
+    end = i + len(marker)
+    while end < len(body) and (not body[end].isspace()) and body[end] not in delims:
+        end += 1
+    return html_module.unescape(body[start:end])
+
+
 class TrackingSubstitutionTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
@@ -121,11 +138,10 @@ class TrackingSubstitutionTests(TestCase):
         html = self._latest_sent_html('qa2@example.com')
         self.assertNotIn('{unique_link}', html)
         self.assertIn('/t/click/', html)
+        self.assertNotIn('<a', html)
         # Follow the fallback redirect: must land on the exact ODK URL.
-        i = html.find('/t/click/')
-        start = html.rfind('href="', 0, i) + len('href="')
-        end = html.find('"', start)
-        parts = urllib.parse.urlparse(html[start:end])
+        mailed = extract_mailed_url(html, '/t/click/')
+        parts = urllib.parse.urlparse(mailed)
         path = parts.path + ('?' + parts.query if parts.query else '')
         click = self.anon.get(path, HTTP_USER_AGENT=HUMAN_UA)
         self.assertEqual(click.status_code, 302)
