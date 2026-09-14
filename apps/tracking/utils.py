@@ -68,18 +68,21 @@ def append_query_params(destination_url: str, query_string: str) -> str:
 
 def get_shortener_base_url(request=None) -> str:
     """
-    Returns the branded short URL base domain.
-    Defaults to https://marketing.iriscommunications.cloud
+    Canonical base URL embedded in generated /c/<token> tracking links.
+    Honours explicit configuration exactly as set (including localhost
+    for local development). The production default lives in
+    core/settings.py (SHORTENER_BASE_URL); no domain is hard-coded here.
     """
-    configured = getattr(settings, 'SHORTENER_BASE_URL', None)
+    configured = (getattr(settings, 'SHORTENER_BASE_URL', None)
+                  or getattr(settings, 'BASE_TRACKING_URL', None))
+    if not configured and request is not None:
+        configured = f"{request.scheme}://{request.get_host()}"
     if not configured:
-        configured = getattr(settings, 'BASE_TRACKING_URL', None)
-    if not configured or configured in ('http://localhost:8000', 'http://127.0.0.1:8000'):
-        # If in debug mode and a request is provided, we can use request host, but prefer branded domain
-        if request and getattr(settings, 'USE_REQUEST_HOST_FOR_TRACKING', False):
-            configured = f"{request.scheme}://{request.get_host()}"
-        else:
-            configured = 'https://marketing.iriscommunications.cloud'
+        # Unreachable in practice: core/settings.py always defines
+        # SHORTENER_BASE_URL (production default). Localhost fails safe
+        # for a misconfigured tree: it never mints production-based URLs
+        # whose rows live in a different database.
+        configured = 'http://localhost:8000'
 
     return configured.rstrip('/')
 

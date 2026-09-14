@@ -526,7 +526,8 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 'links': CampaignTrackingLinkSerializer(links, many=True).data,
             })
 
-        serializer = CampaignTrackingLinkSerializer(data=request.data)
+        serializer = CampaignTrackingLinkSerializer(
+            data=request.data, context={'campaign': campaign})
         serializer.is_valid(raise_exception=True)
         token = generate_unique_tracking_token(CampaignTrackingLink, length=8)
         link = CampaignTrackingLink.objects.create(
@@ -570,7 +571,8 @@ class CampaignViewSet(viewsets.ModelViewSet):
 
         partial = request.method == 'PATCH'
         serializer = CampaignTrackingLinkSerializer(
-            link, data=request.data, partial=partial
+            link, data=request.data, partial=partial,
+            context={'campaign': campaign}
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()

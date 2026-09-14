@@ -29,3 +29,34 @@ class CampaignTrackingLinkSerializer(serializers.ModelSerializer):
                 'Destination URL must be a valid absolute http:// or https:// URL.'
             )
         return value
+
+    def validate(self, attrs):
+        # A link with neither its own destination nor a campaign default
+        # can never redirect (/c/ returns 400). Refuse to create or update
+        # into that dead state. Campaign comes from the view context on
+        # create, or from the instance on update.
+        campaign = None
+        if self.instance is not None:
+            campaign = self.instance.campaign
+        elif self.context.get('campaign') is not None:
+            campaign = self.context['campaign']
+        if 'destination_url' in attrs:
+            # Present even when explicitly blanked: use it as given.
+            dest = (attrs.get('destination_url') or '').strip()
+        elif self.instance is not None:
+            # Field untouched on update (PATCH without it): keep stored value.
+            dest = (self.instance.destination_url or '').strip()
+        else:
+            dest = ''
+        campaign_default = ''
+        if campaign is not None:
+            campaign_default = (campaign.destination_url or '').strip()
+        if not dest and not campaign_default:
+            raise serializers.ValidationError({
+                'destination_url': (
+                    'Set a destination URL for this link or a default '
+                    'destination URL on the campaign; otherwise the link '
+                    'cannot redirect.'
+                ),
+            })
+        return attrs
