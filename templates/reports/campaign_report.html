@@ -477,6 +477,8 @@
                                 <th class="py-3 px-4">Time</th>
                                 <th class="py-3 px-4">Recipient</th>
                                 <th class="py-3 px-4">Link</th>
+                                <th class="py-3 px-4">Tracking URL</th>
+                                <th class="py-3 px-4">Destination</th>
                                 <th class="py-3 px-4 text-center">Type</th>
                                 <th class="py-3 px-4">Browser</th>
                                 <th class="py-3 px-4">OS</th>
@@ -485,7 +487,7 @@
                             </tr>
                         </thead>
                         <tbody id="rc-events-tbody" class="divide-y divide-slate-100">
-                            <tr><td colspan="8" class="py-8 text-center text-slate-400">Loading recent clicks...</td></tr>
+                            <tr><td colspan="10" class="py-8 text-center text-slate-400">Loading recent clicks...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1021,7 +1023,7 @@
 
             const events = data.events || [];
             if (events.length === 0) {
-                eventsTbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-slate-400">No clicks recorded yet.</td></tr>';
+                eventsTbody.innerHTML = '<tr><td colspan="10" class="py-8 text-center text-slate-400">No clicks recorded yet.</td></tr>';
             } else {
                 eventsTbody.innerHTML = events.map(e => {
                     let typeBadge = '<span class="text-slate-300">-</span>';
@@ -1040,6 +1042,8 @@
                                 <div class="font-mono text-[11px] text-slate-500">${escapeHtml(e.contact_email)}</div>
                             </td>
                             <td class="py-3 px-4 font-bold text-slate-800">${escapeHtml(e.link_name)}</td>
+                            <td class="py-3 px-4 font-mono text-[11px] text-indigo-600 max-w-[220px] truncate" title="${escapeHtml(e.short_url || '')}">${escapeHtml(e.short_url || '-')}</td>
+                            <td class="py-3 px-4 font-mono text-[11px] text-slate-500 max-w-xs truncate" title="${escapeHtml(e.destination_url || '')}">${e.destination_url ? escapeHtml(e.destination_url) : '<span class="text-slate-300">-</span>'}</td>
                             <td class="py-3 px-4 text-center">${typeBadge}</td>
                             <td class="py-3 px-4 text-slate-600">${escapeHtml(e.browser)}</td>
                             <td class="py-3 px-4 text-slate-600">${escapeHtml(e.operating_system)}</td>
@@ -1052,7 +1056,7 @@
 
             if (window.lucide) lucide.createIcons();
         } catch (err) {
-            eventsTbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-rose-400">Could not load click activity.</td></tr>';
+            eventsTbody.innerHTML = '<tr><td colspan="10" class="py-8 text-center text-rose-400">Could not load click activity.</td></tr>';
         }
     }
 

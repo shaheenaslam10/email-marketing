@@ -159,6 +159,59 @@ def expand_tracking_placeholders(html_content, campaign=None, contact=None):
     return ''.join(parts)
 
 
+def get_or_create_recipient_tracking_link(campaign, contact, target_url, link_name=''):
+    """Creates/reuses ShortenedLink + RECIPIENT CampaignTrackingLink.
+
+    One opaque token per (campaign, contact, destination). Contact is
+    optional: contact=None rows (e.g. unattributed test sends) share a
+    single link per (campaign, destination). Campaign is required.
+    """
+    from apps.tracking.models import ShortenedLink, CampaignTrackingLink
+    from apps.tracking.utils import generate_secure_token, build_campaign_short_url
+
+    shortened_link, _ = ShortenedLink.objects.get_or_create(
+        campaign=campaign,
+        original_url=target_url,
+        defaults={
+            'link_name': link_name or 'Tracked Link',
+            'tracking_enabled': True
+        }
+    )
+    if link_name and (not shortened_link.link_name or shortened_link.link_name == 'Tracked Link'):
+        shortened_link.link_name = link_name
+        shortened_link.save(update_fields=['link_name'])
+
+    # Branded recipient URL on the unified /c/<token> endpoint.
+    # One opaque token per (campaign, contact, destination);
+    # reuses the existing shortener base-URL config.
+    recipient_link = CampaignTrackingLink.objects.filter(
+        shortened_link=shortened_link,
+        campaign=campaign,
+        contact=contact,
+        link_type=CampaignTrackingLink.LinkType.RECIPIENT,
+    ).first()
+
+    if not recipient_link:
+        # Generate unique token
+        for _ in range(10):
+            new_token = generate_secure_token(8)
+            if not CampaignTrackingLink.objects.filter(tracking_token=new_token).exists():
+                break
+        rec_short_url = build_campaign_short_url(new_token)
+        recipient_link = CampaignTrackingLink.objects.create(
+            campaign=campaign,
+            link_type=CampaignTrackingLink.LinkType.RECIPIENT,
+            name=link_name or 'Tracked Link',
+            shortened_link=shortened_link,
+            destination_url=target_url,
+            contact=contact,
+            tracking_token=new_token,
+            short_url=rec_short_url
+        )
+
+    return recipient_link
+
+
 def wrap_tracking(
     html_content: str,
     token_str: str,
@@ -174,7 +227,7 @@ def wrap_tracking(
     """
     base_url = getattr(settings, 'BASE_TRACKING_URL', 'http://localhost:8000').rstrip('/')
 
-    from apps.tracking.utils import generate_secure_token, validate_destination_url, build_campaign_short_url
+    from apps.tracking.utils import validate_destination_url
 
     # Rewrite unsubscribe tag
     unsub_url = f"{base_url}/t/unsubscribe/{token_str}/"
@@ -187,10 +240,10 @@ def wrap_tracking(
     # (track_clicks=False), tracked anchors resolve to their direct
     # destination instead of a short URL. Anchors with explicit
     # data-track="true" (Step 5 Track URL = ON) resolve to the short URL
-    # as plain text with no <a> element, so providers cannot rewrite it.
+    # as plain text with no <a> element, so providers cannot rewrite it;
+    # they never use the legacy /t/click/?url= fallback (no campaign ->
+    # direct destination as plain text instead).
     if True:
-        from apps.tracking.models import ShortenedLink, CampaignTrackingLink
-
         def replace_anchor(match):
             tag_attrs = match.group(1)
             inner_html = match.group(2)
@@ -256,49 +309,28 @@ def wrap_tracking(
                 plain_txt = html_module.unescape(re.sub(r'<[^>]+>', '', inner_html)).strip()
                 link_name = plain_txt[:60] if plain_txt and not plain_txt.startswith(('http://', 'https://', '{unique')) else ''
 
+            # First-party tracked links (Insert URL, Track URL = ON) must
+            # NEVER use the legacy /t/click/?url= fallback: it exposes the
+            # destination in the URL. With a campaign, mint the /c/ link
+            # (contact optional: unattributed test sends share one row);
+            # without a campaign no /c/ row can exist, so emit the direct
+            # destination as plain text (tracking unavailable in that
+            # context). Either way the output is bare text, never an href.
+            if tracking_explicit:
+                if campaign:
+                    try:
+                        recipient_link = get_or_create_recipient_tracking_link(
+                            campaign, contact, target_url, link_name)
+                        return html_module.escape(recipient_link.short_url)
+                    except Exception:
+                        pass
+                return html_module.escape(target_url)
+
             final_url = None
             if campaign and contact:
                 try:
-                    shortened_link, _ = ShortenedLink.objects.get_or_create(
-                        campaign=campaign,
-                        original_url=target_url,
-                        defaults={
-                            'link_name': link_name or 'Tracked Link',
-                            'tracking_enabled': True
-                        }
-                    )
-                    if link_name and (not shortened_link.link_name or shortened_link.link_name == 'Tracked Link'):
-                        shortened_link.link_name = link_name
-                        shortened_link.save(update_fields=['link_name'])
-
-                    # Branded recipient URL on the unified /c/<token> endpoint.
-                    # One opaque token per (campaign, contact, destination);
-                    # reuses the existing shortener base-URL config.
-                    recipient_link = CampaignTrackingLink.objects.filter(
-                        shortened_link=shortened_link,
-                        campaign=campaign,
-                        contact=contact,
-                        link_type=CampaignTrackingLink.LinkType.RECIPIENT,
-                    ).first()
-
-                    if not recipient_link:
-                        # Generate unique token
-                        for _ in range(10):
-                            new_token = generate_secure_token(8)
-                            if not CampaignTrackingLink.objects.filter(tracking_token=new_token).exists():
-                                break
-                        rec_short_url = build_campaign_short_url(new_token)
-                        recipient_link = CampaignTrackingLink.objects.create(
-                            campaign=campaign,
-                            link_type=CampaignTrackingLink.LinkType.RECIPIENT,
-                            name=link_name or 'Tracked Link',
-                            shortened_link=shortened_link,
-                            destination_url=target_url,
-                            contact=contact,
-                            tracking_token=new_token,
-                            short_url=rec_short_url
-                        )
-
+                    recipient_link = get_or_create_recipient_tracking_link(
+                        campaign, contact, target_url, link_name)
                     final_url = recipient_link.short_url
                 except Exception as e:
                     # Fallback to legacy tracking if database error
@@ -309,12 +341,7 @@ def wrap_tracking(
                 encoded_url = urllib.parse.quote(target_url, safe='')
                 final_url = f"{base_url}/t/click/{token_str}/?url={encoded_url}"
 
-            # First-party tracked links (Insert URL, Track URL = ON) render
-            # as plain text with no anchor element (see tracking_explicit).
-            if tracking_explicit:
-                return html_module.escape(final_url)
-
-            # Replace href attribute
+            # Replace href attribute (ordinary tracked anchors keep a real link)
             new_tag_attrs = re.sub(r'href=["\'][^"\']+["\']', f'href="{final_url}"', tag_attrs, count=1, flags=re.IGNORECASE)
             new_inner = inner_html.replace('{unique_link}', final_url).replace('{unique-link}', final_url)
             return f'<a {new_tag_attrs}>{new_inner}</a>'
