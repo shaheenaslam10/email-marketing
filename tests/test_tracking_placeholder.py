@@ -13,6 +13,7 @@ from apps.campaigns.services import (
 from apps.reminders.services import process_single_campaign_message
 from apps.sandbox.models import SandboxEmail
 from apps.tracking.models import (
+    ShortenedLink, RecipientLink, LinkClickEvent,
     CampaignTrackingLink, CampaignLinkClickEvent,
 )
 
@@ -233,7 +234,7 @@ class TrackingPlaceholderTests(TestCase):
         self.assertNotIn('<a', html)
         self.assertIn('/c/', html)
 
-    def test_standalone_preview_without_campaign_uses_personal_url(self):
+    def test_standalone_preview_without_campaign_renders_direct_plaintext(self):
         self._give_personal_url(self.contact1)
         resp = self.client.post(
             '/api/campaigns/render-preview/',
@@ -247,8 +248,12 @@ class TrackingPlaceholderTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         html = resp.json()['html_content']
         self.assertNotIn('{{', html)
+        self.assertNotIn('{unique_link}', html)
         self.assertNotIn('<a', html)
-        self.assertIn('/t/click/', html)
+        self.assertNotIn('/t/click/', html)
+        self.assertIn(PERSONAL_URL, html)
+        self.assertEqual(
+            CampaignTrackingLink.objects.filter(link_type=RECIPIENT).count(), 0)
 
     def test_wizard_button_inserts_placeholder_directly(self):
         page = self.client.get('/campaigns/create/')
@@ -264,3 +269,75 @@ class TrackingPlaceholderTests(TestCase):
         self.assertEqual(
             render_content_variables('<p>{{nope_var}}</p>', self.contact1),
             '<p></p>')
+
+    def test_campaign_without_contact_mints_shared_unattributed_c_link(self):
+        tracked = (
+            '<p>Hi</p><p><a href="https://marketing.iriscommunications.cloud/c/{unique_link}" '
+            'data-original-url="' + ODK_URL.replace('&', '&amp;') + '" data-link-name="Survey" '
+            'data-track="true">Take Survey</a></p>'
+        )
+        out1 = wrap_tracking(tracked, token_str='t1', campaign=self.campaign, contact=None)
+        out2 = wrap_tracking(tracked, token_str='t2', campaign=self.campaign, contact=None)
+        self.assertNotIn('/t/click/', out1)
+        self.assertNotIn('<a', out1)
+        self.assertIn('/c/', out1)
+        links = CampaignTrackingLink.objects.filter(
+            campaign=self.campaign, link_type=RECIPIENT)
+        self.assertEqual(links.count(), 1)
+        link = links.first()
+        self.assertIsNone(link.contact)
+        self.assertEqual(link.destination_url, ODK_URL)
+        self.assertIn(link.short_url, out1)
+        self.assertIn(link.short_url, out2)
+
+        click = self.anon.get('/c/' + link.tracking_token + '/', HTTP_USER_AGENT=HUMAN_UA)
+        self.assertEqual(click.status_code, 302)
+        self.assertEqual(click.url, ODK_URL)
+        evt = CampaignLinkClickEvent.objects.get(link=link)
+        self.assertIsNone(evt.contact)
+        self.assertEqual(evt.campaign, self.campaign)
+        activity = self.client.get(
+            '/api/campaigns/%d/report/link-clicks/' % self.campaign.id).json()
+        self.assertEqual(activity['total_events'], 1)
+        self.assertEqual(activity['events'][0]['contact_name'], '-')
+        self.assertEqual(activity['events'][0]['short_url'], link.short_url)
+        self.assertEqual(activity['events'][0]['destination_url'], ODK_URL)
+
+    def test_ordinary_anchor_without_campaign_keeps_legacy_fallback(self):
+        plain = '<p>Hi <a href="https://example.com/info">info page</a></p>'
+        out = wrap_tracking(plain, token_str='t9', campaign=None, contact=None)
+        self.assertIn('/t/click/', out)
+        self.assertIn('<a', out)
+
+    def test_link_clicks_api_returns_destination_url_both_branches(self):
+        out = render_for(PLACEHOLDER_HTML, self.campaign, self.contact1)
+        mailed = extract_mailed_url(out, '/c/')
+        parts = urllib.parse.urlparse(mailed)
+        self.anon.get(parts.path, HTTP_USER_AGENT=HUMAN_UA)
+        sl = ShortenedLink.objects.create(
+            campaign=self.campaign, original_url='https://example.com/legacy',
+            link_name='Legacy Link')
+        rl = RecipientLink.objects.create(
+            shortened_link=sl, campaign=self.campaign, contact=self.contact2,
+            tracking_token='LEGACY01',
+            short_url='https://marketing.iriscommunications.cloud/r/LEGACY01')
+        LinkClickEvent.objects.create(
+            recipient_link=rl, campaign=self.campaign, contact=self.contact2,
+            browser='Chrome', operating_system='Windows', device_type='Desktop',
+            click_type='HUMAN')
+        activity = self.client.get(
+            '/api/campaigns/%d/report/link-clicks/' % self.campaign.id).json()
+        self.assertEqual(activity['total_events'], 2)
+        by_email = {e['contact_email']: e for e in activity['events']}
+        self.assertEqual(by_email['ali@example.com']['destination_url'], ODK_URL)
+        self.assertEqual(
+            by_email['sara@example.com']['destination_url'], 'https://example.com/legacy')
+        self.assertIn('/c/', by_email['ali@example.com']['short_url'])
+
+    def test_report_page_shows_tracking_url_and_destination_columns(self):
+        page = self.client.get('/campaigns/%d/report/' % self.campaign.id)
+        self.assertEqual(page.status_code, 200)
+        body = page.content.decode('utf-8')
+        self.assertIn('Tracking URL', body)
+        self.assertIn('Destination', body)
+        self.assertIn('e.destination_url', body)

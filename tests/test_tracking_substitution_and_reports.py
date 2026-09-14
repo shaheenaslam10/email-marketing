@@ -124,7 +124,7 @@ class TrackingSubstitutionTests(TestCase):
         self.assertEqual(click.url, ODK_URL)
         self.assertEqual(CampaignLinkClickEvent.objects.filter(link=rl).count(), 1)
 
-    def test_standalone_test_email_uses_redirect_fallback(self):
+    def test_standalone_test_email_uses_direct_plaintext(self):
         resp = self.client.post(
             '/api/campaigns/test_email/',
             data=json.dumps({
@@ -137,15 +137,14 @@ class TrackingSubstitutionTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         html = self._latest_sent_html('qa2@example.com')
         self.assertNotIn('{unique_link}', html)
-        self.assertIn('/t/click/', html)
+        # No campaign exists, so no /c/ row can be minted; tracked links
+        # degrade to the direct destination as plain text (never the
+        # legacy /t/click/?url= fallback, which would expose it).
+        self.assertNotIn('/t/click/', html)
         self.assertNotIn('<a', html)
-        # Follow the fallback redirect: must land on the exact ODK URL.
-        mailed = extract_mailed_url(html, '/t/click/')
-        parts = urllib.parse.urlparse(mailed)
-        path = parts.path + ('?' + parts.query if parts.query else '')
-        click = self.anon.get(path, HTTP_USER_AGENT=HUMAN_UA)
-        self.assertEqual(click.status_code, 302)
-        self.assertEqual(click.url, ODK_URL)
+        self.assertIn(ODK_URL, html_module.unescape(html))
+        self.assertEqual(CampaignTrackingLink.objects.filter(link_type=CampaignTrackingLink.LinkType.RECIPIENT).count(), 0)
+        self.assertEqual(ShortenedLink.objects.count(), 0)
 
     # 2. Test email with tracking disabled ------------------------------------
     def test_test_email_disabled_stays_direct(self):
