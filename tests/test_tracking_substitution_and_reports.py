@@ -35,7 +35,7 @@ def tracked_email_html(dest=ODK_URL, enabled=True):
     stored = dest.replace('&', '&amp;')
     if enabled:
         return (
-            '<p>Hi</p><p><a href="https://marketing.iriscommunications.cloud/{unique_link}" '
+            '<p>Hi</p><p><a href="https://marketing.iriscommunications.cloud/c/{unique_link}" '
             'data-original-url="' + stored + '" data-link-name="ODK Survey Link" '
             'data-track="true" target="_blank">Start Survey</a></p>'
         )
@@ -96,13 +96,16 @@ class TrackingSubstitutionTests(TestCase):
         html = self._latest_sent_html('qa@example.com')
         self.assertNotIn('{unique_link}', html)
 
-        rl = RecipientLink.objects.get(campaign=self.campaign, contact=self.contact1)
+        rl = CampaignTrackingLink.objects.get(campaign=self.campaign, contact=self.contact1, link_type=CampaignTrackingLink.LinkType.RECIPIENT)
+        self.assertEqual(rl.link_type, CampaignTrackingLink.LinkType.RECIPIENT)
+        self.assertEqual(rl.contact, self.contact1)
+        self.assertIn('/c/', rl.short_url)
         self.assertIn(rl.short_url, html)
 
-        click = self.anon.get('/' + rl.tracking_token + '/', HTTP_USER_AGENT=HUMAN_UA)
+        click = self.anon.get('/c/' + rl.tracking_token + '/', HTTP_USER_AGENT=HUMAN_UA)
         self.assertEqual(click.status_code, 302)
         self.assertEqual(click.url, ODK_URL)
-        self.assertEqual(LinkClickEvent.objects.filter(recipient_link=rl).count(), 1)
+        self.assertEqual(CampaignLinkClickEvent.objects.filter(link=rl).count(), 1)
 
     def test_standalone_test_email_uses_redirect_fallback(self):
         resp = self.client.post(
@@ -142,7 +145,7 @@ class TrackingSubstitutionTests(TestCase):
         self.assertNotIn('{unique_link}', html)
         self.assertIn(ODK_URL, html_module.unescape(html))
         self.assertNotIn('/t/click/', html)
-        self.assertEqual(RecipientLink.objects.count(), 0)
+        self.assertEqual(CampaignTrackingLink.objects.filter(link_type=CampaignTrackingLink.LinkType.RECIPIENT).count(), 0)
         self.assertEqual(ShortenedLink.objects.count(), 0)
 
     # 3. Real recipient send with tracking enabled -----------------------------
@@ -155,10 +158,10 @@ class TrackingSubstitutionTests(TestCase):
         html = self._latest_sent_html(self.contact1.email)
         self.assertNotIn('{unique_link}', html)
 
-        rl = RecipientLink.objects.get(campaign=self.campaign, contact=self.contact1)
+        rl = CampaignTrackingLink.objects.get(campaign=self.campaign, contact=self.contact1, link_type=CampaignTrackingLink.LinkType.RECIPIENT)
         self.assertIn(rl.short_url, html)
 
-        click = self.anon.get('/' + rl.tracking_token + '/', HTTP_USER_AGENT=HUMAN_UA)
+        click = self.anon.get('/c/' + rl.tracking_token + '/', HTTP_USER_AGENT=HUMAN_UA)
         self.assertEqual(click.status_code, 302)
         self.assertEqual(click.url, ODK_URL)
         msg.refresh_from_db()
@@ -176,7 +179,7 @@ class TrackingSubstitutionTests(TestCase):
         html = self._latest_sent_html(self.contact1.email)
         self.assertNotIn('{unique_link}', html)
         self.assertIn(ODK_URL, html_module.unescape(html))
-        self.assertEqual(RecipientLink.objects.count(), 0)
+        self.assertEqual(CampaignTrackingLink.objects.filter(link_type=CampaignTrackingLink.LinkType.RECIPIENT).count(), 0)
         self.assertEqual(ShortenedLink.objects.count(), 0)
 
     def test_real_send_link_tracking_off_stays_direct(self):
@@ -190,7 +193,7 @@ class TrackingSubstitutionTests(TestCase):
         html = self._latest_sent_html(self.contact1.email)
         self.assertNotIn('{unique_link}', html)
         self.assertIn(ODK_URL, html_module.unescape(html))
-        self.assertEqual(RecipientLink.objects.count(), 0)
+        self.assertEqual(CampaignTrackingLink.objects.filter(link_type=CampaignTrackingLink.LinkType.RECIPIENT).count(), 0)
 
     # 5. Editor metadata preservation --------------------------------------------
     def test_editor_registers_tracking_link_blot(self):
@@ -208,7 +211,7 @@ class TrackingSubstitutionTests(TestCase):
         legacy = '<p><a href="https://marketing.iriscommunications.cloud/{unique_link}">x</a></p>'
         out = wrap_tracking(legacy, token_str='tok', campaign=self.campaign, contact=self.contact1)
         self.assertIn('{unique_link}', out)
-        self.assertEqual(RecipientLink.objects.count(), 0)
+        self.assertEqual(CampaignTrackingLink.objects.filter(link_type=CampaignTrackingLink.LinkType.RECIPIENT).count(), 0)
 
     # 6/7. Substitution + recipient-specific URLs ----------------------------------
     def test_unique_link_substitution(self):
@@ -217,7 +220,7 @@ class TrackingSubstitutionTests(TestCase):
             campaign=self.campaign, contact=self.contact1,
         )
         self.assertNotIn('{unique_link}', out)
-        rl = RecipientLink.objects.get(campaign=self.campaign, contact=self.contact1)
+        rl = CampaignTrackingLink.objects.get(campaign=self.campaign, contact=self.contact1, link_type=CampaignTrackingLink.LinkType.RECIPIENT)
         self.assertIn(rl.short_url, out)
 
         out_disabled = wrap_tracking(
@@ -236,13 +239,13 @@ class TrackingSubstitutionTests(TestCase):
             tracked_email_html(enabled=True), token_str='t2',
             campaign=self.campaign, contact=self.contact2,
         )
-        rl1 = RecipientLink.objects.get(campaign=self.campaign, contact=self.contact1)
-        rl2 = RecipientLink.objects.get(campaign=self.campaign, contact=self.contact2)
+        rl1 = CampaignTrackingLink.objects.get(campaign=self.campaign, contact=self.contact1, link_type=CampaignTrackingLink.LinkType.RECIPIENT)
+        rl2 = CampaignTrackingLink.objects.get(campaign=self.campaign, contact=self.contact2, link_type=CampaignTrackingLink.LinkType.RECIPIENT)
         self.assertNotEqual(rl1.tracking_token, rl2.tracking_token)
         self.assertIn(rl1.short_url, out1)
         self.assertIn(rl2.short_url, out2)
         for rl in (rl1, rl2):
-            click = self.anon.get('/' + rl.tracking_token + '/', HTTP_USER_AGENT=HUMAN_UA)
+            click = self.anon.get('/c/' + rl.tracking_token + '/', HTTP_USER_AGENT=HUMAN_UA)
             self.assertEqual(click.status_code, 302)
             self.assertEqual(click.url, ODK_URL)
 
@@ -252,8 +255,8 @@ class TrackingSubstitutionTests(TestCase):
             tracked_email_html(enabled=True), token_str='tok',
             campaign=self.campaign, contact=self.contact1,
         )
-        rl = RecipientLink.objects.get(campaign=self.campaign, contact=self.contact1)
-        click = self.anon.get('/' + rl.tracking_token + '/', HTTP_USER_AGENT=HUMAN_UA)
+        rl = CampaignTrackingLink.objects.get(campaign=self.campaign, contact=self.contact1, link_type=CampaignTrackingLink.LinkType.RECIPIENT)
+        click = self.anon.get('/c/' + rl.tracking_token + '/', HTTP_USER_AGENT=HUMAN_UA)
         self.assertEqual(click.status_code, 302)
         self.assertEqual(click.url, ODK_URL)
         for fragment in ('?st=', '$', '!', '&src=email', '&x=1'):
@@ -275,7 +278,7 @@ class TrackingSubstitutionTests(TestCase):
             campaign=self.campaign, contact=self.contact1,
         )
         self.assertEqual(ShortenedLink.objects.filter(campaign=self.campaign).count(), 1)
-        self.assertEqual(RecipientLink.objects.filter(campaign=self.campaign).count(), 1)
+        self.assertEqual(CampaignTrackingLink.objects.filter(campaign=self.campaign, link_type=CampaignTrackingLink.LinkType.RECIPIENT).count(), 1)
 
     # 15. No double tracking ------------------------------------------------------------
     def test_no_double_tracking(self):
@@ -285,7 +288,7 @@ class TrackingSubstitutionTests(TestCase):
             content_type='application/json',
         )
         self.assertEqual(resp.status_code, 200)
-        first = RecipientLink.objects.get(campaign=self.campaign, contact=self.contact1)
+        first = CampaignTrackingLink.objects.get(campaign=self.campaign, contact=self.contact1, link_type=CampaignTrackingLink.LinkType.RECIPIENT)
 
         msg = CampaignMessage.objects.create(
             campaign=self.campaign, contact=self.contact1,
@@ -293,15 +296,15 @@ class TrackingSubstitutionTests(TestCase):
         )
         self.assertTrue(process_single_campaign_message(msg.id))
         # Real dispatch reuses the same recipient link: no duplicates.
-        self.assertEqual(RecipientLink.objects.filter(campaign=self.campaign).count(), 1)
+        self.assertEqual(CampaignTrackingLink.objects.filter(campaign=self.campaign, link_type=CampaignTrackingLink.LinkType.RECIPIENT).count(), 1)
         self.assertEqual(
-            RecipientLink.objects.get(campaign=self.campaign).tracking_token,
+            CampaignTrackingLink.objects.get(campaign=self.campaign, link_type=CampaignTrackingLink.LinkType.RECIPIENT).tracking_token,
             first.tracking_token,
         )
         # One click produces exactly one click event.
-        self.anon.get('/' + first.tracking_token + '/', HTTP_USER_AGENT=HUMAN_UA)
+        self.anon.get('/c/' + first.tracking_token + '/', HTTP_USER_AGENT=HUMAN_UA)
         self.assertEqual(
-            LinkClickEvent.objects.filter(recipient_link=first).count(), 1
+            CampaignLinkClickEvent.objects.filter(link=first).count(), 1
         )
 
     # 16. Campaigns without tracking ------------------------------------------------------
@@ -320,7 +323,7 @@ class TrackingSubstitutionTests(TestCase):
         html = self._latest_sent_html(self.contact1.email)
         self.assertNotIn('/t/open/', html)
         self.assertIn('a=1&b=2', html_module.unescape(html))
-        self.assertEqual(RecipientLink.objects.count(), 0)
+        self.assertEqual(CampaignTrackingLink.objects.filter(link_type=CampaignTrackingLink.LinkType.RECIPIENT).count(), 0)
         self.assertEqual(ShortenedLink.objects.count(), 0)
 
 
@@ -394,6 +397,7 @@ class ShareableReportTests(TestCase):
         self.assertEqual(events[1].referrer, 'https://facebook.com/ad')
         self.assertEqual(events[2].click_type, 'SUSPECTED_BOT')
         # Anonymous system: no contact/email linkage may be fabricated.
+        self.assertTrue(all(e.contact is None for e in events))
         self.assertEqual(EmailEvent.objects.count(), 0)
         self.assertEqual(LinkClickEvent.objects.count(), 0)
 

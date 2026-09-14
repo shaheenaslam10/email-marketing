@@ -120,7 +120,7 @@ class ContactViewSet(viewsets.ModelViewSet):
                 })
 
         # 2. Link Click Events
-        from apps.tracking.models import LinkClickEvent
+        from apps.tracking.models import LinkClickEvent, CampaignLinkClickEvent
         for ce in LinkClickEvent.objects.filter(contact=contact).select_related('recipient_link__shortened_link', 'campaign'):
             sl = ce.recipient_link.shortened_link
             link_name = sl.link_name or 'Tracked Link'
@@ -131,6 +131,22 @@ class ContactViewSet(viewsets.ModelViewSet):
                 'type': 'LINK_CLICK',
                 'title': f"{link_name} clicked{bot_str}",
                 'description': f"Destination: {sl.original_url} &bull; Device: {ce.device_type or 'Unknown'} &bull; Browser: {ce.browser or 'Unknown'}",
+                'badge': 'emerald' if ce.click_type == 'HUMAN' else 'amber',
+                'icon': 'external-link'
+            })
+
+        # Recipient /c/ link visits (same shape as legacy link clicks).
+        for ce in CampaignLinkClickEvent.objects.filter(contact=contact).select_related('link__shortened_link', 'campaign'):
+            sl = ce.link.shortened_link
+            link_name = (sl.link_name if sl else None) or ce.link.name or 'Tracked Link'
+            dest = sl.original_url if sl else (ce.link.destination_url or '')
+            bot_str = " (Suspected Bot)" if ce.click_type == 'SUSPECTED_BOT' else ""
+            events.append({
+                'timestamp': ce.clicked_at.isoformat(),
+                'time_val': ce.clicked_at,
+                'type': 'LINK_CLICK',
+                'title': f"{link_name} clicked{bot_str}",
+                'description': f"Destination: {dest} &bull; Device: {ce.device_type or 'Unknown'} &bull; Browser: {ce.browser or 'Unknown'}",
                 'badge': 'emerald' if ce.click_type == 'HUMAN' else 'amber',
                 'icon': 'external-link'
             })

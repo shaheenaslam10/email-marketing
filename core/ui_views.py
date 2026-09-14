@@ -10,6 +10,7 @@ from apps.senders.models import Sender
 from apps.email_templates.models import EmailTemplate
 from apps.email_templates.serializers import EmailTemplateSerializer
 from apps.audit.models import AuditLog
+from apps.tracking.utils import get_shortener_base_url
 
 
 @login_required
@@ -69,6 +70,7 @@ def campaign_wizard_view(request, pk=None):
         'odk_datasets': datasets,
         'templates': templates,
         'templates_json': templates_json,
+        'shortener_base_url': get_shortener_base_url(),
     })
 
 
@@ -83,6 +85,7 @@ def templates_view(request):
         'templates': templates,
         'categories': cleaned_cats,
         'group_custom_fields': group_custom_fields,
+        'shortener_base_url': get_shortener_base_url(),
     })
 
 

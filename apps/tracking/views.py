@@ -222,13 +222,16 @@ class ShortUrlRedirectView(View):
 
 class CampaignLinkRedirectView(View):
     """
-    Public campaign-level shareable tracking link endpoint.
+    Unified branded short-link endpoint.
     GET /c/:tracking_token (e.g. GET https://marketing.iriscommunications.cloud/c/A7K29XQ2)
 
-    Anonymous Brevo-style intermediate redirect:
+    Brevo-style intermediate redirect:
       1. Validate the token and resolve the campaign link.
-      2. Record an anonymous click event + aggregate counters.
-      3. 302 redirect to the link destination (or campaign default),
+      2. Record a click event (anonymous for SHAREABLE links,
+         contact-attributed for RECIPIENT links) + counters.
+      3. RECIPIENT links: update CampaignMessage / EmailEvent exactly
+         like the legacy root-level recipient redirect.
+      4. 302 redirect to the link destination (or campaign default),
          passing inbound query params (utm_*) through.
     """
 
@@ -239,9 +242,9 @@ class CampaignLinkRedirectView(View):
             validate_destination_url, detect_bot_and_device, append_query_params,
         )
         token = (token or '').strip()
-        link = CampaignTrackingLink.objects.select_related('campaign').filter(
-            tracking_token=token
-        ).first()
+        link = CampaignTrackingLink.objects.select_related(
+            'campaign', 'contact', 'shortened_link'
+        ).filter(tracking_token=token).first()
 
         if not link:
             return render(request, 'tracking/link_error.html', {
@@ -281,9 +284,13 @@ class CampaignLinkRedirectView(View):
             **{counter_field: F(counter_field) + 1},
         )
 
+        is_recipient = (
+            link.link_type == CampaignTrackingLink.LinkType.RECIPIENT
+        )
         CampaignLinkClickEvent.objects.create(
             link=link,
             campaign=link.campaign,
+            contact=link.contact if is_recipient else None,
             ip_address=get_client_ip(request),
             user_agent=det['user_agent'],
             browser=det['browser'],
@@ -293,6 +300,35 @@ class CampaignLinkRedirectView(View):
             click_type=det['click_type'],
             metadata={'reason': det['detection_reason']},
         )
+
+        # Recipient attribution: mirror the legacy root-level redirect so
+        # CampaignMessage CLICK status, EmailEvent CLICK rows and the
+        # contact timeline behave identically for /c/ recipient URLs.
+        if is_recipient and link.campaign_id and link.contact_id:
+            msg = CampaignMessage.objects.filter(
+                campaign_id=link.campaign_id,
+                contact_id=link.contact_id,
+            ).order_by('-sent_at', '-id').first()
+            if msg:
+                if det['click_type'] != 'SUSPECTED_BOT':
+                    if not msg.clicked_at:
+                        msg.clicked_at = now
+                        msg.status = CampaignMessage.Status.CLICKED
+                        msg.save(update_fields=['clicked_at', 'status'])
+                EmailEvent.objects.create(
+                    message=msg,
+                    event_type=EmailEvent.EventType.CLICK,
+                    url_clicked=destination_url,
+                    ip_address=get_client_ip(request),
+                    user_agent=det['user_agent'],
+                    metadata={
+                        'token': token,
+                        'link_id': link.shortened_link_id,
+                        'link_name': (link.shortened_link.link_name
+                                      if link.shortened_link else None) or link.name,
+                        'click_type': det['click_type'],
+                    },
+                )
 
         final_url = append_query_params(destination_url, request.META.get('QUERY_STRING', ''))
         response = HttpResponseRedirect(final_url, status=302)

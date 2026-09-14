@@ -107,8 +107,7 @@ def wrap_tracking(
     """
     base_url = getattr(settings, 'BASE_TRACKING_URL', 'http://localhost:8000').rstrip('/')
 
-    from apps.tracking.utils import get_shortener_base_url, generate_secure_token, validate_destination_url
-    shortener_base = get_shortener_base_url().rstrip('/')
+    from apps.tracking.utils import generate_secure_token, validate_destination_url, build_campaign_short_url
 
     # Rewrite unsubscribe tag
     unsub_url = f"{base_url}/t/unsubscribe/{token_str}/"
@@ -121,7 +120,7 @@ def wrap_tracking(
     # (track_clicks=False), tracked anchors resolve to their direct
     # destination instead of a short URL.
     if True:
-        from apps.tracking.models import ShortenedLink, RecipientLink
+        from apps.tracking.models import ShortenedLink, CampaignTrackingLink
 
         def replace_anchor(match):
             tag_attrs = match.group(1)
@@ -197,22 +196,29 @@ def wrap_tracking(
                         shortened_link.link_name = link_name
                         shortened_link.save(update_fields=['link_name'])
 
-                    recipient_link = RecipientLink.objects.filter(
+                    # Branded recipient URL on the unified /c/<token> endpoint.
+                    # One opaque token per (campaign, contact, destination);
+                    # reuses the existing shortener base-URL config.
+                    recipient_link = CampaignTrackingLink.objects.filter(
                         shortened_link=shortened_link,
                         campaign=campaign,
-                        contact=contact
+                        contact=contact,
+                        link_type=CampaignTrackingLink.LinkType.RECIPIENT,
                     ).first()
 
                     if not recipient_link:
                         # Generate unique token
                         for _ in range(10):
-                            new_token = generate_secure_token(7)
-                            if not RecipientLink.objects.filter(tracking_token=new_token).exists():
+                            new_token = generate_secure_token(8)
+                            if not CampaignTrackingLink.objects.filter(tracking_token=new_token).exists():
                                 break
-                        rec_short_url = f"{shortener_base}/{new_token}"
-                        recipient_link = RecipientLink.objects.create(
-                            shortened_link=shortened_link,
+                        rec_short_url = build_campaign_short_url(new_token)
+                        recipient_link = CampaignTrackingLink.objects.create(
                             campaign=campaign,
+                            link_type=CampaignTrackingLink.LinkType.RECIPIENT,
+                            name=link_name or 'Tracked Link',
+                            shortened_link=shortened_link,
+                            destination_url=target_url,
                             contact=contact,
                             tracking_token=new_token,
                             short_url=rec_short_url
