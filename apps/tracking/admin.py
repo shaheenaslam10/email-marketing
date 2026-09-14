@@ -5,11 +5,11 @@ from .models import CampaignTrackingLink, CampaignLinkClickEvent
 @admin.register(CampaignTrackingLink)
 class CampaignTrackingLinkAdmin(admin.ModelAdmin):
     list_display = (
-        'id', 'campaign', 'name', 'tracking_token', 'short_url',
+        'id', 'campaign', 'link_type', 'name', 'tracking_token', 'short_url',
         'is_active', 'click_count', 'human_click_count',
         'bot_click_count', 'last_clicked_at',
     )
-    list_filter = ('is_active', 'campaign')
+    list_filter = ('link_type', 'is_active', 'campaign')
     search_fields = ('tracking_token', 'name', 'short_url', 'destination_url')
     readonly_fields = (
         'tracking_token', 'short_url', 'click_count', 'human_click_count',

@@ -113,6 +113,22 @@ class CampaignReportMessagesView(APIView):
         })
 
 
+def _recipient_link_label(rl):
+    """Display name for a legacy RecipientLink or RECIPIENT /c/ link."""
+    sl = getattr(rl, 'shortened_link', None)
+    if sl is not None:
+        return sl.link_name or sl.original_url[:35]
+    return getattr(rl, 'name', '') or 'Tracked Link'
+
+
+def _recipient_link_destination(rl):
+    """Destination URL for a legacy RecipientLink or RECIPIENT /c/ link."""
+    sl = getattr(rl, 'shortened_link', None)
+    if sl is not None:
+        return sl.original_url
+    return getattr(rl, 'destination_url', '') or ''
+
+
 class CampaignReportLinkRecipientsView(APIView):
     """
     Recipient-Level Link Tracking Report (Requirements 6, 8, 9, 14).
@@ -166,15 +182,25 @@ class CampaignReportLinkRecipientsView(APIView):
                 Q(job_id__icontains=search_query)
             )
 
-        # Get RecipientLink records for this campaign
+        # Get recipient links for this campaign: legacy root-level
+        # RecipientLink rows plus RECIPIENT-type /c/ links. SHAREABLE
+        # links are anonymous and never enter this per-recipient view.
+        from apps.tracking.models import CampaignTrackingLink
         rl_qs = RecipientLink.objects.filter(campaign=campaign).select_related('shortened_link', 'contact')
+        rc_qs = CampaignTrackingLink.objects.filter(
+            campaign=campaign,
+            link_type=CampaignTrackingLink.LinkType.RECIPIENT,
+        ).select_related('shortened_link', 'contact')
         if link_id_filter and link_id_filter.isdigit():
             rl_qs = rl_qs.filter(shortened_link_id=int(link_id_filter))
+            rc_qs = rc_qs.filter(shortened_link_id=int(link_id_filter))
 
         # Index recipient links by contact_id
         from collections import defaultdict
         contact_links_map = defaultdict(list)
         for rl in rl_qs:
+            contact_links_map[rl.contact_id].append(rl)
+        for rl in rc_qs:
             contact_links_map[rl.contact_id].append(rl)
 
         # Build combined recipient rows
@@ -218,10 +244,10 @@ class CampaignReportLinkRecipientsView(APIView):
                 continue
 
             # Link details summary
-            link_names = [rl.shortened_link.link_name or rl.shortened_link.original_url[:35] for rl in rlinks]
+            link_names = [_recipient_link_label(rl) for rl in rlinks]
             display_link_name = ", ".join(link_names) if link_names else "No Link Generated"
             sample_short_url = rlinks[0].short_url if rlinks else ""
-            sample_orig_url = rlinks[0].shortened_link.original_url if rlinks else ""
+            sample_orig_url = _recipient_link_destination(rlinks[0]) if rlinks else ""
 
             # Click type classification
             if bot_clicks > 0 and human_clicks == 0:
@@ -357,10 +383,12 @@ class CampaignReportLinkRecipientsView(APIView):
 class CampaignReportShareableLinksView(APIView):
     """
     Shareable / Anonymous Link Activity Report.
-    Covers CampaignTrackingLink rows (Step 1, /c/<token>/) and their
-    CampaignLinkClickEvent visits. Fully separate from recipient-level
-    email tracking: anonymous visits carry no contact attribution, so no
-    "unique clicks" metric is offered (no visitor identity is tracked).
+    Covers SHAREABLE-type CampaignTrackingLink rows (/c/<token>/) and
+    their CampaignLinkClickEvent visits. Fully separate from
+    recipient-level email tracking: anonymous visits carry no contact
+    attribution, so no "unique clicks" metric is offered (no visitor
+    identity is tracked). RECIPIENT-type /c/ links are excluded here;
+    they appear in the recipient Link Clicks report instead.
     Visitor IP addresses are stored but intentionally excluded from this
     API (privacy; available to staff via Django admin).
     """
@@ -374,7 +402,9 @@ class CampaignReportShareableLinksView(APIView):
 
         from apps.tracking.models import CampaignTrackingLink, CampaignLinkClickEvent
 
-        links = list(campaign.tracking_links.all().order_by('-created_at'))
+        links = list(campaign.tracking_links.filter(
+            link_type=CampaignTrackingLink.LinkType.SHAREABLE
+        ).order_by('-created_at'))
 
         link_id = (request.GET.get('link_id') or '').strip()
         selected_link = None
@@ -387,7 +417,10 @@ class CampaignReportShareableLinksView(APIView):
             limit = 50
         limit = max(1, min(limit, 200))
 
-        events_qs = CampaignLinkClickEvent.objects.filter(campaign=campaign)
+        events_qs = CampaignLinkClickEvent.objects.filter(
+            campaign=campaign,
+            link__link_type=CampaignTrackingLink.LinkType.SHAREABLE,
+        )
         if selected_link:
             events_qs = events_qs.filter(link=selected_link)
         events = list(events_qs.select_related('link').order_by('-clicked_at', '-id')[:limit])

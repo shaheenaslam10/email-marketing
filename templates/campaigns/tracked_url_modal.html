@@ -80,10 +80,10 @@
                     <span class="px-2 py-0.5 bg-blue-100 text-blue-800 font-bold rounded-md text-[10px]" id="tu-preview-badge">Branded Domain</span>
                 </div>
                 <div class="p-2.5 bg-white border border-slate-200 rounded-xl font-mono text-xs text-blue-600 font-bold break-all shadow-2xs" id="tu-preview-box">
-                    https://marketing.iriscommunications.cloud/{unique_link}
+                    {{ shortener_base_url|default:'https://marketing.iriscommunications.cloud' }}/c/{unique_link}
                 </div>
                 <p class="text-[10px] text-slate-500 leading-normal" id="tu-preview-note">
-                    * The actual recipient-specific URL (e.g. <code>https://marketing.iriscommunications.cloud/A7K29X</code>) will be generated automatically for every individual contact when the campaign is dispatched.
+                    * The actual recipient-specific URL (e.g. <code>{{ shortener_base_url|default:'https://marketing.iriscommunications.cloud' }}/c/A7K29XQ2</code>) will be generated automatically for every individual contact when the campaign is dispatched.
                 </p>
             </div>
         </div>
@@ -102,6 +102,14 @@
 </div>
 
 <script>
+    // Branded shortener base URL (server config; falls back to production).
+    window.SHORTENER_BASE_URL = window.SHORTENER_BASE_URL || "{{ shortener_base_url|default:'https://marketing.iriscommunications.cloud' }}";
+    function trackedPlaceholderUrl() {
+        return window.SHORTENER_BASE_URL.replace(/\/+$/, '') + '/c/{unique_link}';
+    }
+    function trackedExampleUrl() {
+        return window.SHORTENER_BASE_URL.replace(/\/+$/, '') + '/c/A7K29XQ2';
+    }
     // Custom Link blot: stock Quill 1.3.6 Link keeps ONLY href when pasting
     // HTML, which silently stripped data-original-url / data-link-name /
     // data-track from tracked links and broke {unique_link} substitution at
@@ -211,14 +219,14 @@
                 previewNote.textContent = '* Tracking is disabled. Recipients will be sent directly to this URL without click tracking.';
             }
         } else {
-            previewBox.textContent = 'https://marketing.iriscommunications.cloud/{unique_link}';
+            previewBox.textContent = trackedPlaceholderUrl();
             previewBox.className = 'p-2.5 bg-white border border-blue-200 rounded-xl font-mono text-xs text-blue-600 font-bold break-all shadow-2xs';
             if (previewBadge) {
                 previewBadge.textContent = 'Branded Domain';
                 previewBadge.className = 'px-2 py-0.5 bg-blue-100 text-blue-800 font-bold rounded-md text-[10px]';
             }
             if (previewNote) {
-                previewNote.innerHTML = '* The actual recipient-specific URL (e.g. <code>https://marketing.iriscommunications.cloud/A7K29X</code>) will be generated automatically for every individual contact when the campaign is dispatched.';
+                previewNote.innerHTML = '* The actual recipient-specific URL (e.g. <code>' + trackedExampleUrl() + '</code>) will be generated automatically for every individual contact when the campaign is dispatched.';
             }
         }
     }
@@ -267,7 +275,7 @@
         let linkHtml = '';
         if (enableTracking) {
             const targetAttr = openInNewTab ? 'target="_blank" rel="noopener noreferrer"' : '';
-            linkHtml = `<a href="https://marketing.iriscommunications.cloud/{unique_link}" data-original-url="${esc(originalUrl)}" data-link-name="${esc(linkName || displayText)}" data-track="true" ${targetAttr}>${esc(displayText)}</a>`;
+            linkHtml = `<a href="${trackedPlaceholderUrl()}" data-original-url="${esc(originalUrl)}" data-link-name="${esc(linkName || displayText)}" data-track="true" ${targetAttr}>${esc(displayText)}</a>`;
         } else {
             const targetAttr = openInNewTab ? 'target="_blank" rel="noopener noreferrer"' : '';
             linkHtml = `<a href="${esc(originalUrl)}" data-track="false" ${targetAttr}>${esc(displayText)}</a>`;

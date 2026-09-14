@@ -7,7 +7,7 @@ from apps.groups.models import ContactGroup
 from apps.senders.models import Sender
 from apps.campaigns.models import Campaign, CampaignMessage
 from apps.campaigns.services import wrap_tracking
-from apps.tracking.models import ShortenedLink, RecipientLink, LinkClickEvent, EmailEvent
+from apps.tracking.models import ShortenedLink, RecipientLink, LinkClickEvent, EmailEvent, CampaignTrackingLink
 from apps.tracking.utils import generate_secure_token, validate_destination_url, detect_bot_and_device
 
 
@@ -104,12 +104,18 @@ class UrlShortenerLinkTrackingTests(TestCase):
         wrapped_c1 = wrap_tracking(html, token_str="tok-1", campaign=self.campaign, contact=self.contact1)
         wrapped_c2 = wrap_tracking(html, token_str="tok-2", campaign=self.campaign, contact=self.contact2)
 
-        # Retrieve recipient links
-        rl1 = RecipientLink.objects.get(campaign=self.campaign, contact=self.contact1)
-        rl2 = RecipientLink.objects.get(campaign=self.campaign, contact=self.contact2)
+        # Retrieve recipient links (unified /c/ system, type RECIPIENT)
+        rl1 = CampaignTrackingLink.objects.get(
+            campaign=self.campaign, contact=self.contact1,
+            link_type=CampaignTrackingLink.LinkType.RECIPIENT)
+        rl2 = CampaignTrackingLink.objects.get(
+            campaign=self.campaign, contact=self.contact2,
+            link_type=CampaignTrackingLink.LinkType.RECIPIENT)
 
         self.assertNotEqual(rl1.tracking_token, rl2.tracking_token, "Tokens must be unique per recipient")
         self.assertNotEqual(rl1.short_url, rl2.short_url, "Short URLs must be unique per recipient")
+        self.assertIn('/c/', rl1.short_url)
+        self.assertIn('/c/', rl2.short_url)
         self.assertEqual(rl1.shortened_link.original_url, rl2.shortened_link.original_url)
 
         # Verify href attribute is replaced with unique short URL
@@ -130,7 +136,9 @@ class UrlShortenerLinkTrackingTests(TestCase):
         """
         wrapped = wrap_tracking(multi_html, token_str="tok-multi", campaign=self.campaign, contact=self.contact1)
 
-        rl_links = RecipientLink.objects.filter(campaign=self.campaign, contact=self.contact1)
+        rl_links = CampaignTrackingLink.objects.filter(
+            campaign=self.campaign, contact=self.contact1,
+            link_type=CampaignTrackingLink.LinkType.RECIPIENT)
         self.assertEqual(rl_links.count(), 3, "All three links must have distinct tracking records")
 
         tokens = [rl.tracking_token for rl in rl_links]

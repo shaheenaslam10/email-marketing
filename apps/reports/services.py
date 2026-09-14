@@ -152,24 +152,56 @@ def get_campaign_full_report(campaign: Campaign) -> dict:
             })
 
     # Enhanced Link Tracking & Analytics (Requirements 5, 8, 14, 16)
-    from apps.tracking.models import ShortenedLink, RecipientLink, LinkClickEvent
+    # Recipient analytics UNION two sources: legacy root-level
+    # RecipientLink rows (emails delivered before the /c/ migration) and
+    # RECIPIENT-type CampaignTrackingLink rows (all new email links).
+    # SHAREABLE links are anonymous and stay in the separate shareable
+    # report; they never enter recipient metrics.
+    from apps.tracking.models import (
+        ShortenedLink, RecipientLink, LinkClickEvent,
+        CampaignTrackingLink, CampaignLinkClickEvent,
+    )
     from django.db.models import Sum
 
+    RECIPIENT = CampaignTrackingLink.LinkType.RECIPIENT
     shortened_links_qs = ShortenedLink.objects.filter(campaign=campaign)
     recip_links_qs = RecipientLink.objects.filter(campaign=campaign)
     click_events_qs = LinkClickEvent.objects.filter(campaign=campaign)
+    recip_c_links_qs = CampaignTrackingLink.objects.filter(
+        campaign=campaign, link_type=RECIPIENT)
+    recip_c_events_qs = CampaignLinkClickEvent.objects.filter(
+        campaign=campaign, link__link_type=RECIPIENT)
 
     # Human vs bot clicks
-    total_link_clicks = click_events_qs.count()
+    total_link_clicks = click_events_qs.count() + recip_c_events_qs.count()
     if total_link_clicks == 0 and total_clicks_count > 0:
         total_link_clicks = total_clicks_count
 
-    human_click_events = click_events_qs.filter(click_type=LinkClickEvent.ClickType.HUMAN)
-    unique_clickers_human = recip_links_qs.filter(human_click_count__gt=0).values('contact_id').distinct().count()
+    human_clicks_total = (
+        click_events_qs.filter(click_type=LinkClickEvent.ClickType.HUMAN).count()
+        + recip_c_events_qs.filter(click_type=CampaignLinkClickEvent.ClickType.HUMAN).count()
+    )
+    bot_clicks_total = (
+        click_events_qs.filter(click_type=LinkClickEvent.ClickType.SUSPECTED_BOT).count()
+        + recip_c_events_qs.filter(click_type=CampaignLinkClickEvent.ClickType.SUSPECTED_BOT).count()
+    )
+    unknown_clicks_total = (
+        click_events_qs.filter(click_type=LinkClickEvent.ClickType.UNKNOWN).count()
+        + recip_c_events_qs.filter(click_type=CampaignLinkClickEvent.ClickType.UNKNOWN).count()
+    )
+    legacy_human_ids = set(recip_links_qs.filter(
+        human_click_count__gt=0).values_list('contact_id', flat=True))
+    c_human_ids = set(recip_c_links_qs.filter(
+        human_click_count__gt=0).values_list('contact_id', flat=True))
+    unique_clickers_human = len(legacy_human_ids | c_human_ids)
     if unique_clickers_human == 0 and unique_clicks_count > 0:
         unique_clickers_human = unique_clicks_count
 
-    total_unique_clicks = recip_links_qs.filter(click_count__gt=0).values('contact_id').distinct().count()
+    legacy_clicked_ids = set(recip_links_qs.filter(
+        click_count__gt=0).values_list('contact_id', flat=True))
+    c_clicked_ids = set(recip_c_links_qs.filter(
+        click_count__gt=0).values_list('contact_id', flat=True))
+    total_unique_clicks = len(legacy_clicked_ids | c_clicked_ids)
     if total_unique_clicks == 0:
         total_unique_clicks = unique_clickers_human
 
@@ -184,17 +216,22 @@ def get_campaign_full_report(campaign: Campaign) -> dict:
         'total_link_clicks': total_link_clicks,
         'unique_link_clicks': unique_clickers_human,
         'unique_click_rate': link_click_rate,
-        'human_clicks': human_click_events.count(),
-        'bot_clicks': click_events_qs.filter(click_type=LinkClickEvent.ClickType.SUSPECTED_BOT).count(),
-        'unknown_clicks': click_events_qs.filter(click_type=LinkClickEvent.ClickType.UNKNOWN).count(),
+        'human_clicks': human_clicks_total,
+        'bot_clicks': bot_clicks_total,
+        'unknown_clicks': unknown_clicks_total,
     }
 
     # Per-link performance table (Requirement 8)
     link_performance = []
     for sl in shortened_links_qs:
         sl_rls = recip_links_qs.filter(shortened_link=sl)
-        sl_tot = sl_rls.aggregate(s=Sum('click_count'))['s'] or 0
-        sl_uniq = sl_rls.filter(click_count__gt=0).values('contact_id').distinct().count()
+        sl_c_rls = recip_c_links_qs.filter(shortened_link=sl)
+        sl_tot = (sl_rls.aggregate(s=Sum('click_count'))['s'] or 0) + \
+            (sl_c_rls.aggregate(s=Sum('click_count'))['s'] or 0)
+        sl_uniq = len(
+            set(sl_rls.filter(click_count__gt=0).values_list('contact_id', flat=True))
+            | set(sl_c_rls.filter(click_count__gt=0).values_list('contact_id', flat=True))
+        )
         sl_rate = round((sl_uniq / delivered_count * 100), 1) if delivered_count > 0 else 0.0
         link_performance.append({
             'id': sl.id,
@@ -205,31 +242,36 @@ def get_campaign_full_report(campaign: Campaign) -> dict:
             'click_rate': sl_rate,
         })
 
-    # Device analytics (Requirement 16)
+    # Device analytics (Requirement 16) - legacy + recipient /c/ events.
     device_counts = {'Desktop': 0, 'Mobile': 0, 'Tablet': 0, 'Unknown': 0}
-    for d in click_events_qs.values('device_type').annotate(cnt=Count('id')):
-        dt = d.get('device_type') or 'Unknown'
-        if dt in device_counts:
-            device_counts[dt] += d['cnt']
-        else:
-            device_counts['Unknown'] += d['cnt']
+    for events_qs in (click_events_qs, recip_c_events_qs):
+        for d in events_qs.values('device_type').annotate(cnt=Count('id')):
+            dt = d.get('device_type') or 'Unknown'
+            if dt in device_counts:
+                device_counts[dt] += d['cnt']
+            else:
+                device_counts['Unknown'] += d['cnt']
 
-    # Browser analytics (Requirement 16)
+    # Browser analytics (Requirement 16) - legacy + recipient /c/ events.
     browser_counts = {'Chrome': 0, 'Edge': 0, 'Safari': 0, 'Firefox': 0, 'Other': 0}
-    for b in click_events_qs.values('browser').annotate(cnt=Count('id')):
-        br = b.get('browser') or 'Other'
-        if br in browser_counts:
-            browser_counts[br] += b['cnt']
-        else:
-            browser_counts['Other'] += b['cnt']
+    for events_qs in (click_events_qs, recip_c_events_qs):
+        for b in events_qs.values('browser').annotate(cnt=Count('id')):
+            br = b.get('browser') or 'Other'
+            if br in browser_counts:
+                browser_counts[br] += b['cnt']
+            else:
+                browser_counts['Other'] += b['cnt']
 
-    # Click timeline (by date)
-    click_timeline = []
-    for ev in click_events_qs.extra({'click_date': "date(clicked_at)"}).values('click_date').annotate(cnt=Count('id')).order_by('click_date')[:14]:
-        click_timeline.append({
-            'date': str(ev.get('click_date', '')),
-            'clicks': ev.get('cnt', 0)
-        })
+    # Click timeline (by date) - legacy + recipient /c/ events combined.
+    date_counts = {}
+    for events_qs in (click_events_qs, recip_c_events_qs):
+        for ev in events_qs.extra({'click_date': "date(clicked_at)"}).values('click_date').annotate(cnt=Count('id')).order_by('click_date'):
+            key = str(ev.get('click_date', ''))
+            date_counts[key] = date_counts.get(key, 0) + ev.get('cnt', 0)
+    click_timeline = [
+        {'date': date_key, 'clicks': date_counts[date_key]}
+        for date_key in sorted(date_counts)[:14]
+    ]
 
     # Legacy link_clicks fallback for compatibility
     link_clicks_qs = EmailEvent.objects.filter(

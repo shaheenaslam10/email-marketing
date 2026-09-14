@@ -467,6 +467,8 @@ class CampaignViewSet(viewsets.ModelViewSet):
         """
         Campaign-level shareable tracking links (anonymous, for external
         distribution). GET lists, POST generates a new link.
+        Only SHAREABLE links are listed here; per-recipient /c/ email
+        links are managed automatically and stay out of this UI.
         """
         from apps.tracking.models import CampaignTrackingLink
         from apps.tracking.serializers import CampaignTrackingLinkSerializer
@@ -476,7 +478,9 @@ class CampaignViewSet(viewsets.ModelViewSet):
         campaign = self.get_object()
 
         if request.method == 'GET':
-            links = campaign.tracking_links.all().order_by('-created_at')
+            links = campaign.tracking_links.filter(
+                link_type=CampaignTrackingLink.LinkType.SHAREABLE
+            ).order_by('-created_at')
             return Response({
                 'campaign_id': campaign.id,
                 'destination_url': campaign.destination_url or '',
@@ -509,7 +513,8 @@ class CampaignViewSet(viewsets.ModelViewSet):
         from apps.tracking.serializers import CampaignTrackingLinkSerializer
         campaign = self.get_object()
         link = CampaignTrackingLink.objects.filter(
-            pk=link_id, campaign=campaign
+            pk=link_id, campaign=campaign,
+            link_type=CampaignTrackingLink.LinkType.SHAREABLE,
         ).first()
         if not link:
             return Response(
@@ -545,7 +550,8 @@ class CampaignViewSet(viewsets.ModelViewSet):
         )
         campaign = self.get_object()
         link = CampaignTrackingLink.objects.filter(
-            pk=link_id, campaign=campaign
+            pk=link_id, campaign=campaign,
+            link_type=CampaignTrackingLink.LinkType.SHAREABLE,
         ).first()
         if not link:
             return Response(
