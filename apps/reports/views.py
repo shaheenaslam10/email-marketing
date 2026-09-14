@@ -380,6 +380,117 @@ class CampaignReportLinkRecipientsView(APIView):
         })
 
 
+class CampaignReportLinkClicksView(APIView):
+    """
+    Recipient Click Activity: per-click events for recipient email links.
+    Unions legacy root-level LinkClickEvent rows with RECIPIENT-type /c/
+    visits, newest first. Shareable (anonymous) visits are excluded here;
+    they belong to the shareable-links report. IP addresses are stored but
+    excluded from this API (privacy; staff can use Django admin).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            campaign = Campaign.objects.get(pk=pk)
+        except Campaign.DoesNotExist:
+            return Response({'error': 'Campaign not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        from apps.tracking.models import (
+            ShortenedLink, LinkClickEvent,
+            CampaignTrackingLink, CampaignLinkClickEvent,
+        )
+
+        try:
+            limit = int(request.GET.get('limit', 50))
+        except (TypeError, ValueError):
+            limit = 50
+        limit = max(1, min(limit, 200))
+
+        link_id = (request.GET.get('link_id') or '').strip()
+        selected_sl_id = int(link_id) if link_id.isdigit() else None
+
+        legacy_qs = LinkClickEvent.objects.filter(
+            campaign=campaign
+        ).select_related('recipient_link__shortened_link', 'contact')
+        new_qs = CampaignLinkClickEvent.objects.filter(
+            campaign=campaign,
+            link__link_type=CampaignTrackingLink.LinkType.RECIPIENT,
+        ).select_related('link__shortened_link', 'contact')
+        if selected_sl_id:
+            legacy_qs = legacy_qs.filter(
+                recipient_link__shortened_link_id=selected_sl_id)
+            new_qs = new_qs.filter(link__shortened_link_id=selected_sl_id)
+
+        def click_type_label(ct):
+            return {
+                'HUMAN': 'Human',
+                'SUSPECTED_BOT': 'Suspected Bot',
+                'UNKNOWN': 'Unknown',
+            }.get(ct, 'Unknown')
+
+        def contact_display(contact):
+            if not contact:
+                return '-', '-'
+            name = contact.name or (
+                (contact.first_name or '') + ' ' + (contact.last_name or '')
+            ).strip() or contact.email
+            return name, contact.email
+
+        rows = []
+        for e in legacy_qs.order_by('-clicked_at', '-id')[:limit]:
+            sl = e.recipient_link.shortened_link
+            name, email = contact_display(e.contact)
+            rows.append({
+                '_sort': (e.clicked_at, 'L', e.id),
+                'clicked_at': e.clicked_at.isoformat(),
+                'contact_name': name,
+                'contact_email': email,
+                'link_name': sl.link_name or 'Tracked Link',
+                'short_url': e.recipient_link.short_url,
+                'click_type': click_type_label(e.click_type),
+                'browser': e.browser or 'Unknown',
+                'operating_system': e.operating_system or 'Unknown',
+                'device_type': e.device_type or 'Unknown',
+                'referrer': e.referrer or '',
+            })
+        for e in new_qs.order_by('-clicked_at', '-id')[:limit]:
+            sl = e.link.shortened_link
+            name, email = contact_display(e.contact)
+            rows.append({
+                '_sort': (e.clicked_at, 'C', e.id),
+                'clicked_at': e.clicked_at.isoformat(),
+                'contact_name': name,
+                'contact_email': email,
+                'link_name': (sl.link_name if sl else None) or e.link.name or 'Tracked Link',
+                'short_url': e.link.short_url,
+                'click_type': click_type_label(e.click_type),
+                'browser': e.browser or 'Unknown',
+                'operating_system': e.operating_system or 'Unknown',
+                'device_type': e.device_type or 'Unknown',
+                'referrer': e.referrer or '',
+            })
+        rows.sort(key=lambda r: r['_sort'], reverse=True)
+        events = []
+        for r in rows[:limit]:
+            del r['_sort']
+            events.append(r)
+
+        links = [
+            {'id': sl.id, 'name': sl.link_name or sl.original_url[:40]}
+            for sl in ShortenedLink.objects.filter(
+                campaign=campaign).order_by('link_name', 'id')
+        ]
+
+        return Response({
+            'campaign_id': campaign.id,
+            'campaign_name': campaign.name,
+            'total_events': legacy_qs.count() + new_qs.count(),
+            'links': links,
+            'events': events,
+        })
+
+
 class CampaignReportShareableLinksView(APIView):
     """
     Shareable / Anonymous Link Activity Report.

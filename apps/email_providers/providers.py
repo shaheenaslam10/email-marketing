@@ -41,21 +41,30 @@ def _summarize_outbound_html(html_content):
     }
 
 
-def _log_outbound_diagnostic(sender, provider, smtp_mode, to_email, html_content, log_context):
-    """One sanitized log line per send: proves what was handed to the provider."""
-    ctx = log_context or {}
+def _maybe_log_outbound(sender, provider, mode, to_email, html_content, log_context):
+    """
+    Emits one sanitized diagnostic line per top-level send and returns the
+    correlation dict for forwarding. Delegated providers (Brevo/SES ->
+    SMTP/Sandbox) reuse the same dict, so the marker below guarantees a
+    single line even when one provider delegates to another.
+    """
+    ctx = dict(log_context) if log_context else {}
+    if ctx.pop('_diag_done', False):
+        return ctx
     logger.info(
         "Outbound email via %s sender_id=%s mode=%s disable_provider_click_tracking=%s "
         "campaign_id=%s message_id=%s to=%s summary=%s",
         provider,
         getattr(sender, 'id', None),
-        'smtp-relay' if smtp_mode else 'api',
+        mode,
         getattr(sender, 'disable_provider_click_tracking', False),
         ctx.get('campaign_id'),
         ctx.get('message_id'),
         _mask_email(to_email),
         _summarize_outbound_html(html_content),
     )
+    ctx['_diag_done'] = True
+    return ctx
 
 
 class SandboxProvider(BaseEmailProvider):
@@ -72,6 +81,9 @@ class SandboxProvider(BaseEmailProvider):
         tags: Optional[List[str]] = None,
         log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
+        log_context = _maybe_log_outbound(
+            self.sender, 'sandbox', 'sandbox', to_email, html_content, log_context,
+        )
         try:
             msg_id = f"sandbox-{uuid.uuid4()}"
             SandboxEmail.objects.create(
@@ -109,6 +121,9 @@ class SMTPProvider(BaseEmailProvider):
         tags: Optional[List[str]] = None,
         log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
+        log_context = _maybe_log_outbound(
+            self.sender, 'smtp', 'smtp', to_email, html_content, log_context,
+        )
         try:
             msg = MIMEMultipart('alternative')
             msg['Subject'] = subject
@@ -197,8 +212,9 @@ class BrevoProvider(BaseEmailProvider):
         log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         smtp_mode = self._is_smtp_config()
-        _log_outbound_diagnostic(
-            self.sender, 'brevo', smtp_mode, to_email, html_content, log_context,
+        log_context = _maybe_log_outbound(
+            self.sender, 'brevo', 'smtp-relay' if smtp_mode else 'api',
+            to_email, html_content, log_context,
         )
         if smtp_mode:
             if not self.sender.host:
@@ -206,7 +222,7 @@ class BrevoProvider(BaseEmailProvider):
             if not self.sender.port:
                 self.sender.port = 587
             self.sender.use_tls = True
-            return SMTPProvider(self.sender).send_email(to_email, subject, html_content, text_content, reply_to, headers, tags)
+            return SMTPProvider(self.sender).send_email(to_email, subject, html_content, text_content, reply_to, headers, tags, log_context)
 
         # NOTE: Brevo offers no per-message, API, SMTP-header, or per-link
         # opt-out from its transactional link rewriting. Whatever branded
@@ -286,6 +302,9 @@ class MailgunProvider(BaseEmailProvider):
         tags: Optional[List[str]] = None,
         log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
+        log_context = _maybe_log_outbound(
+            self.sender, 'mailgun', 'api', to_email, html_content, log_context,
+        )
         domain = self.sender.api_domain or self.sender.email.split('@')[-1]
         url = f"https://api.mailgun.net/v3/{domain}/messages"
         data = {
@@ -354,6 +373,9 @@ class SendGridProvider(BaseEmailProvider):
         tags: Optional[List[str]] = None,
         log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
+        log_context = _maybe_log_outbound(
+            self.sender, 'sendgrid', 'api', to_email, html_content, log_context,
+        )
         payload = {
             "personalizations": [{"to": [{"email": to_email}]}],
             "from": {"email": self.sender.email, "name": self.sender.name},
@@ -425,6 +447,9 @@ class PostmarkProvider(BaseEmailProvider):
         tags: Optional[List[str]] = None,
         log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
+        log_context = _maybe_log_outbound(
+            self.sender, 'postmark', 'api', to_email, html_content, log_context,
+        )
         payload = {
             "From": self.sender.display_from,
             "To": to_email,
@@ -493,11 +518,16 @@ class AmazonSESProvider(BaseEmailProvider):
         log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         # If host is provided, route via SMTP endpoint for Amazon SES
-        if self.sender.host:
+        ses_smtp_mode = bool(self.sender.host)
+        log_context = _maybe_log_outbound(
+            self.sender, 'ses', 'smtp' if ses_smtp_mode else 'sandbox',
+            to_email, html_content, log_context,
+        )
+        if ses_smtp_mode:
             smtp_prov = SMTPProvider(self.sender)
-            return smtp_prov.send_email(to_email, subject, html_content, text_content, reply_to, headers, tags)
+            return smtp_prov.send_email(to_email, subject, html_content, text_content, reply_to, headers, tags, log_context)
         # Sandbox fallback for simulated SES
-        return SandboxProvider(self.sender).send_email(to_email, subject, html_content, text_content, reply_to, headers, tags)
+        return SandboxProvider(self.sender).send_email(to_email, subject, html_content, text_content, reply_to, headers, tags, log_context)
 
     def test_connection(self) -> Tuple[bool, str]:
         if self.sender.host:
