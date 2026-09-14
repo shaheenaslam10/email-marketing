@@ -354,6 +354,95 @@ class CampaignReportLinkRecipientsView(APIView):
         })
 
 
+class CampaignReportShareableLinksView(APIView):
+    """
+    Shareable / Anonymous Link Activity Report.
+    Covers CampaignTrackingLink rows (Step 1, /c/<token>/) and their
+    CampaignLinkClickEvent visits. Fully separate from recipient-level
+    email tracking: anonymous visits carry no contact attribution, so no
+    "unique clicks" metric is offered (no visitor identity is tracked).
+    Visitor IP addresses are stored but intentionally excluded from this
+    API (privacy; available to staff via Django admin).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            campaign = Campaign.objects.get(pk=pk)
+        except Campaign.DoesNotExist:
+            return Response({'error': 'Campaign not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        from apps.tracking.models import CampaignTrackingLink, CampaignLinkClickEvent
+
+        links = list(campaign.tracking_links.all().order_by('-created_at'))
+
+        link_id = (request.GET.get('link_id') or '').strip()
+        selected_link = None
+        if link_id.isdigit():
+            selected_link = next((l for l in links if l.id == int(link_id)), None)
+
+        try:
+            limit = int(request.GET.get('limit', 50))
+        except (TypeError, ValueError):
+            limit = 50
+        limit = max(1, min(limit, 200))
+
+        events_qs = CampaignLinkClickEvent.objects.filter(campaign=campaign)
+        if selected_link:
+            events_qs = events_qs.filter(link=selected_link)
+        events = list(events_qs.select_related('link').order_by('-clicked_at', '-id')[:limit])
+
+        links_payload = []
+        for l in links:
+            links_payload.append({
+                'id': l.id,
+                'name': l.name or 'Untitled link',
+                'short_url': l.short_url,
+                'destination_url': l.resolve_destination(),
+                'uses_campaign_default': not (l.destination_url or '').strip(),
+                'is_active': l.is_active,
+                'click_count': l.click_count,
+                'human_click_count': l.human_click_count,
+                'bot_click_count': l.bot_click_count,
+                'first_clicked_at': l.first_clicked_at.isoformat() if l.first_clicked_at else None,
+                'last_clicked_at': l.last_clicked_at.isoformat() if l.last_clicked_at else None,
+            })
+
+        def click_type_label(ct):
+            return {
+                'HUMAN': 'Human',
+                'SUSPECTED_BOT': 'Suspected Bot',
+                'UNKNOWN': 'Unknown',
+            }.get(ct, 'Unknown')
+
+        events_payload = [{
+            'clicked_at': e.clicked_at.isoformat() if e.clicked_at else None,
+            'link_id': e.link_id,
+            'link_name': ((e.link.name if e.link else '') or 'Untitled link'),
+            'click_type': click_type_label(e.click_type),
+            'browser': e.browser or 'Other',
+            'operating_system': e.operating_system or 'Other',
+            'device_type': e.device_type or 'Unknown',
+            'referrer': e.referrer or '',
+        } for e in events]
+
+        return Response({
+            'campaign_id': campaign.id,
+            'campaign_name': campaign.name,
+            'campaign_destination_url': campaign.destination_url or '',
+            'totals': {
+                'links': len(links),
+                'active_links': sum(1 for l in links if l.is_active),
+                'total_clicks': sum(l.click_count for l in links),
+                'human_clicks': sum(l.human_click_count for l in links),
+                'bot_clicks': sum(l.bot_click_count for l in links),
+            },
+            'links': links_payload,
+            'recent_events': events_payload,
+            'recent_limit': limit,
+        })
+
+
 class CampaignExportView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 

@@ -1,4 +1,5 @@
 import re
+import uuid
 import logging
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
@@ -9,7 +10,7 @@ from apps.contacts.models import Contact
 from apps.senders.models import Sender
 from apps.groups.models import TestEmailGroup, ContactGroup
 from apps.email_providers.providers import get_email_provider
-from .services import render_content_variables, validate_campaign_variables
+from .services import render_content_variables, validate_campaign_variables, wrap_tracking
 from apps.reminders.services import launch_initial_campaign
 
 logger = logging.getLogger(__name__)
@@ -219,10 +220,23 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 rendered_subj = f"[TEST] {base_subject}"
                 rendered_html = base_html
 
+            # Resolve tracked links exactly like production dispatch so test
+            # emails carry working URLs (recipient-specific short URLs when a
+            # campaign + sample contact exist, legacy redirect fallback
+            # otherwise) instead of a literal {unique_link} placeholder.
+            final_test_html = wrap_tracking(
+                html_content=rendered_html,
+                token_str=str(uuid.uuid4()),
+                track_opens=campaign.track_opens if campaign else True,
+                track_clicks=campaign.track_clicks if campaign else True,
+                campaign=campaign,
+                contact=contact,
+            )
+
             res = provider.send_email(
                 to_email=to_addr,
                 subject=rendered_subj,
-                html_content=rendered_html,
+                html_content=final_test_html,
                 text_content="",
                 reply_to=reply_to
             )
@@ -236,7 +250,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
                     from_email=sender_email,
                     reply_to=reply_to or '',
                     subject=rendered_subj,
-                    html_content=rendered_html,
+                    html_content=final_test_html,
                     text_content="",
                     provider_type=sender.provider_type if sender else 'SANDBOX'
                 )

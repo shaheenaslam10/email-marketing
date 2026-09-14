@@ -1,3 +1,4 @@
+import html as html_module
 import re
 import urllib.parse
 from typing import Dict, Any, Tuple, List
@@ -113,49 +114,72 @@ def wrap_tracking(
     unsub_url = f"{base_url}/t/unsubscribe/{token_str}/"
     html_content = html_content.replace('{{unsubscribe_url}}', unsub_url)
 
-    # Click tracking
-    if track_clicks:
+    # Click tracking / placeholder resolution.
+    # NOTE: this block always runs (not only when track_clicks is True) so a
+    # {unique_link} placeholder can never ship literally: when tracking is
+    # disabled at link level (data-track="false") or campaign level
+    # (track_clicks=False), tracked anchors resolve to their direct
+    # destination instead of a short URL.
+    if True:
         from apps.tracking.models import ShortenedLink, RecipientLink
 
         def replace_anchor(match):
             tag_attrs = match.group(1)
             inner_html = match.group(2)
 
-            # Check for explicit data-track="false"
-            if re.search(r'data-track=["\']false["\']', tag_attrs, re.IGNORECASE):
-                return match.group(0)
-
-            # Extract href
+            # Extract href (unescape entities: editor serialization stores
+            # multi-param URLs with &amp; which must become & again)
             href_m = re.search(r'href=["\']([^"\']+)["\']', tag_attrs, re.IGNORECASE)
             if not href_m:
                 return match.group(0)
-            raw_href = href_m.group(1).strip()
+            raw_href = html_module.unescape(href_m.group(1)).strip()
 
             # Ignore internal or non-http links
             if raw_href.startswith(('mailto:', 'tel:', '#', 'javascript:')) or '/t/unsubscribe/' in raw_href:
                 return match.group(0)
 
-            # Check for data-original-url
+            # Check for data-original-url (also entity-unescaped)
             orig_m = re.search(r'data-original-url=["\']([^"\']+)["\']', tag_attrs, re.IGNORECASE)
-            target_url = orig_m.group(1).strip() if orig_m else raw_href
+            orig_url = html_module.unescape(orig_m.group(1)).strip() if orig_m else ''
 
-            # Check if target is still a placeholder like {unique_link}
-            if '{unique_link}' in target_url or '{unique-link}' in target_url:
-                if orig_m:
-                    target_url = orig_m.group(1).strip()
+            # Explicit per-link opt-out?
+            track_m = re.search(r'data-track=["\'](true|false)["\']', tag_attrs, re.IGNORECASE)
+            tracking_disabled = bool(track_m and track_m.group(1).lower() == 'false')
+
+            # Resolve the {unique_link} placeholder to the real destination.
+            # Only a bare placeholder with no data-original-url (legacy content
+            # saved before the editor preserved metadata) is left untouched.
+            has_placeholder = '{unique_link}' in raw_href or '{unique-link}' in raw_href
+            if has_placeholder:
+                if orig_url and '{unique_link}' not in orig_url and '{unique-link}' not in orig_url:
+                    target_url = orig_url
                 else:
                     return match.group(0)
+            else:
+                target_url = orig_url or raw_href
 
             # Validate target URL
             if not validate_destination_url(target_url):
                 return match.group(0)
 
+            # Tracking disabled (link-level or campaign-level): emit the
+            # direct destination URL, never a tracking endpoint.
+            if tracking_disabled or not track_clicks:
+                if not has_placeholder:
+                    return match.group(0)
+                direct_attrs = re.sub(
+                    r'href=["\'][^"\']+["\']', f'href="{target_url}"',
+                    tag_attrs, count=1, flags=re.IGNORECASE,
+                )
+                direct_inner = inner_html.replace('{unique_link}', target_url).replace('{unique-link}', target_url)
+                return f'<a {direct_attrs}>{direct_inner}</a>'
+
             # Extract link name/label
             name_m = re.search(r'data-link-name=["\']([^"\']+)["\']', tag_attrs, re.IGNORECASE)
             if name_m:
-                link_name = name_m.group(1).strip()
+                link_name = html_module.unescape(name_m.group(1)).strip()
             else:
-                plain_txt = re.sub(r'<[^>]+>', '', inner_html).strip()
+                plain_txt = html_module.unescape(re.sub(r'<[^>]+>', '', inner_html)).strip()
                 link_name = plain_txt[:60] if plain_txt and not plain_txt.startswith(('http://', 'https://', '{unique')) else ''
 
             final_url = None
