@@ -437,6 +437,17 @@ class RecipientLifecycleTests(TestCase):
         resp = self.client.get('/api/contacts/%d/timeline/' % queued_contact.id)
         self.assertEqual(resp.status_code, 200)
 
+        # failed message: error recorded, no timestamps (must not crash either)
+        failed_contact = self._make_contact(
+            'Failed Fern', 'failed@example.com', '03000000001', 'JOB-9011')
+        CampaignMessage.objects.create(
+            campaign=self.campaign, contact=failed_contact,
+            message_type=CampaignMessage.MessageType.INITIAL,
+            reminder_sequence=0, to_email=failed_contact.email, subject='q',
+            status=CampaignMessage.Status.FAILED, error_message='SMTP refused')
+        resp = self.client.get('/api/contacts/%d/timeline/' % failed_contact.id)
+        self.assertEqual(resp.status_code, 200)
+
         # full lifecycle + suppressed reminder
         ali = self._make_contact('Ali Abbas', 'ali@example.com', '03001234567', 'JOB-9001')
         launch_initial_campaign(self.campaign)
@@ -523,3 +534,17 @@ class RecipientLifecycleTests(TestCase):
         self.assertIn('Reminder Eligible', body)
         self.assertIn('Survey completed', body)
         self.assertIn('03001234567', body)
+
+        xlsx_resp = self.client.get(
+            '/api/campaigns/%d/report/link-recipients/?export=xlsx' % self.campaign.id)
+        self.assertEqual(xlsx_resp.status_code, 200)
+        self.assertIn('spreadsheetml', xlsx_resp['Content-Type'])
+        import io
+        import zipfile
+        with zipfile.ZipFile(io.BytesIO(xlsx_resp.content)) as zf:
+            blob = b' '.join(
+                zf.read(n) for n in zf.namelist() if n.endswith('.xml'))
+        for needle in (b'Reminder Eligible', b'Reminder Reason', b'Phone',
+                       b'Email Sent', b'Email Opened', b'Tracking Token',
+                       b'Completed At', b'Survey completed', b'03001234567'):
+            self.assertIn(needle, blob)
