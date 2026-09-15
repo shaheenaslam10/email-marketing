@@ -412,16 +412,19 @@
                             <th class="py-3 px-4">Contact</th>
                             <th class="py-3 px-4">JobID</th>
                             <th class="py-3 px-4 text-center">Survey Status</th>
+                            <th class="py-3 px-4 text-center">Email</th>
                             <th class="py-3 px-4 text-center">Link Status</th>
                             <th class="py-3 px-4">First Click</th>
                             <th class="py-3 px-4">Last Click</th>
                             <th class="py-3 px-4 text-center">Total Clicks</th>
                             <th class="py-3 px-4 text-center">Click Type</th>
+                            <th class="py-3 px-4">Completed</th>
+                            <th class="py-3 px-4 text-center">Reminder</th>
                             <th class="py-3 px-4">Link Details</th>
                         </tr>
                     </thead>
                     <tbody id="lt-recipients-tbody" class="divide-y divide-slate-100">
-                        <tr><td colspan="9" class="py-12 text-center text-slate-400">Loading recipient activity...</td></tr>
+                        <tr><td colspan="12" class="py-12 text-center text-slate-400">Loading recipient activity...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -895,7 +898,7 @@
         const pageSize = document.getElementById('lt-page-size').value;
 
         const tbody = document.getElementById('lt-recipients-tbody');
-        tbody.innerHTML = '<tr><td colspan="9" class="py-8 text-center text-slate-400">Loading recipient activity...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="py-8 text-center text-slate-400">Loading recipient activity...</td></tr>';
 
         const params = new URLSearchParams({
             page: page,
@@ -928,7 +931,7 @@
             document.getElementById('lt-pg-next').disabled = (page >= totalPages);
 
             if (recipients.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" class="py-10 text-center text-slate-400 font-medium">No recipient activity matched criteria.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="12" class="py-10 text-center text-slate-400 font-medium">No recipient activity matched criteria.</td></tr>';
                 return;
             }
 
@@ -940,6 +943,27 @@
                 const linkBadge = r.link_status === 'Clicked'
                     ? `<span class="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-bold text-[10px]">Clicked</span>`
                     : `<span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium text-[10px]">Not Clicked</span>`;
+
+                const sentMark = r.email_sent_at && r.email_sent_at !== '-'
+                    ? `<span class="text-emerald-600 font-bold" title="Sent: ${escapeHtml(r.email_sent_at)}">Sent &#10003;</span>`
+                    : `<span class="text-slate-300">Sent &mdash;</span>`;
+                const openedMark = r.email_opened_at && r.email_opened_at !== '-'
+                    ? `<span class="text-purple-600 font-bold" title="Opened: ${escapeHtml(r.email_opened_at)}">Opened &#10003;</span>`
+                    : `<span class="text-slate-300">Opened &mdash;</span>`;
+                const emailLifecycle = `${sentMark}<br>${openedMark}`;
+
+                const completedLifecycle = r.completed_at && r.completed_at !== '-'
+                    ? `<span class="text-emerald-700 font-bold" title="ODK submission: ${escapeHtml(r.odk_submission_id || '')}">${escapeHtml(r.completed_at)}</span>`
+                    : `<span class="text-slate-300">&mdash;</span>`;
+
+                const reminderBadge = r.reminder_eligible
+                    ? `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]" title="${escapeHtml(r.reminder_reason || '')}">Eligible</span>`
+                    : `<span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold text-[10px]" title="${escapeHtml(r.reminder_reason || '')}">No</span>`;
+
+                const linkTitle = ['Destination: ' + (r.original_url || '-')]
+                    .concat(r.short_url ? ['Tracking URL: ' + r.short_url] : [])
+                    .concat(r.tracking_token ? ['token: ' + r.tracking_token] : [])
+                    .join(' | ');
 
                 let clickTypeBadge = '<span class="text-slate-300">-</span>';
                 if (r.click_type === 'Human') {
@@ -955,24 +979,29 @@
                         <td class="py-3 px-4">
                             <div class="font-bold text-slate-900">${escapeHtml(r.name)}</div>
                             <div class="text-[11px] text-slate-500">${escapeHtml(r.email)}</div>
+                            <div class="font-mono text-[11px] text-slate-400">${escapeHtml(r.phone || '-')}</div>
                         </td>
                         <td class="py-3 px-4 font-mono font-semibold text-slate-700 text-xs">${escapeHtml(r.job_id)}</td>
                         <td class="py-3 px-4 text-center">${surveyBadge}</td>
+                        <td class="py-3 px-4 text-center whitespace-nowrap">${emailLifecycle}</td>
                         <td class="py-3 px-4 text-center">${linkBadge}</td>
                         <td class="py-3 px-4 text-slate-600 whitespace-nowrap">${r.first_click}</td>
                         <td class="py-3 px-4 text-slate-600 whitespace-nowrap">${r.last_click}</td>
                         <td class="py-3 px-4 text-center font-bold ${r.total_clicks > 0 ? 'text-indigo-600' : 'text-slate-400'}">${r.total_clicks}</td>
                         <td class="py-3 px-4 text-center">${clickTypeBadge}</td>
-                        <td class="py-3 px-4 text-[11px] max-w-xs truncate text-slate-600" title="${escapeHtml(r.original_url)}">
+                        <td class="py-3 px-4 text-slate-600 whitespace-nowrap">${completedLifecycle}</td>
+                        <td class="py-3 px-4 text-center">${reminderBadge}</td>
+                        <td class="py-3 px-4 text-[11px] max-w-xs truncate text-slate-600" title="${escapeHtml(linkTitle)}">
                             <span class="font-bold text-slate-800">${escapeHtml(r.link_name)}</span>
                             ${r.short_url ? `<br><span class="font-mono text-[10px] text-blue-600">${escapeHtml(r.short_url)}</span>` : ''}
+                            ${r.tracking_token ? `<br><span class="font-mono text-[10px] text-slate-400">token: ${escapeHtml(r.tracking_token)}</span>` : ''}
                         </td>
                     </tr>
                 `;
             }).join('');
         } catch (err) {
             console.error(err);
-            tbody.innerHTML = '<tr><td colspan="9" class="py-8 text-center text-rose-500">Failed to load recipient report.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="12" class="py-8 text-center text-rose-500">Failed to load recipient report.</td></tr>';
         }
     }
 
@@ -1040,9 +1069,10 @@
                             <td class="py-3 px-4">
                                 <div class="font-bold text-slate-900">${escapeHtml(e.contact_name)}</div>
                                 <div class="font-mono text-[11px] text-slate-500">${escapeHtml(e.contact_email)}</div>
+                                <div class="font-mono text-[11px] text-slate-400">${escapeHtml(e.contact_phone || '-')}</div>
                             </td>
                             <td class="py-3 px-4 font-bold text-slate-800">${escapeHtml(e.link_name)}</td>
-                            <td class="py-3 px-4 font-mono text-[11px] text-indigo-600 max-w-[220px] truncate" title="${escapeHtml(e.short_url || '')}">${escapeHtml(e.short_url || '-')}</td>
+                            <td class="py-3 px-4 font-mono text-[11px] text-indigo-600 max-w-[220px] truncate" title="${escapeHtml((e.short_url || '-') + (e.tracking_token ? ' (token: ' + e.tracking_token + ')' : ''))}">${escapeHtml(e.short_url || '-')}</td>
                             <td class="py-3 px-4 font-mono text-[11px] text-slate-500 max-w-xs truncate" title="${escapeHtml(e.destination_url || '')}">${e.destination_url ? escapeHtml(e.destination_url) : '<span class="text-slate-300">-</span>'}</td>
                             <td class="py-3 px-4 text-center">${typeBadge}</td>
                             <td class="py-3 px-4 text-slate-600">${escapeHtml(e.browser)}</td>
