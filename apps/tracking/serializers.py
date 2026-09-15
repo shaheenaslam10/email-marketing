@@ -1,10 +1,18 @@
 from rest_framework import serializers
 from apps.tracking.models import CampaignTrackingLink
-from apps.tracking.utils import validate_destination_url
+from apps.tracking.utils import validate_destination_url, build_campaign_short_url
 
 
 class CampaignTrackingLinkSerializer(serializers.ModelSerializer):
     campaign_name = serializers.CharField(source='campaign.name', read_only=True)
+    short_url = serializers.SerializerMethodField()
+
+    def get_short_url(self, obj):
+        # Canonical rule: the token is the identity; the public URL is
+        # always derived from the CURRENT configuration. The stored
+        # short_url may have been minted under another base and is
+        # never emitted.
+        return build_campaign_short_url(obj.tracking_token)
 
     class Meta:
         model = CampaignTrackingLink

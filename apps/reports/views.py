@@ -400,6 +400,7 @@ class CampaignReportLinkClicksView(APIView):
             ShortenedLink, LinkClickEvent,
             CampaignTrackingLink, CampaignLinkClickEvent,
         )
+        from apps.tracking.utils import build_campaign_short_url
 
         try:
             limit = int(request.GET.get('limit', 50))
@@ -464,7 +465,10 @@ class CampaignReportLinkClicksView(APIView):
                 'contact_name': name,
                 'contact_email': email,
                 'link_name': (sl.link_name if sl else None) or e.link.name or 'Tracked Link',
-                'short_url': e.link.short_url,
+                # Derived from the current base: the stored short_url
+                # may have been minted under another environment.
+                'short_url': build_campaign_short_url(
+                    e.link.tracking_token),
                 'destination_url': (e.link.destination_url or (sl.original_url if sl else '') or ''),
                 'click_type': click_type_label(e.click_type),
                 'browser': e.browser or 'Unknown',
@@ -514,6 +518,7 @@ class CampaignReportShareableLinksView(APIView):
             return Response({'error': 'Campaign not found'}, status=status.HTTP_404_NOT_FOUND)
 
         from apps.tracking.models import CampaignTrackingLink, CampaignLinkClickEvent
+        from apps.tracking.utils import build_campaign_short_url
 
         links = list(campaign.tracking_links.filter(
             link_type=CampaignTrackingLink.LinkType.SHAREABLE
@@ -543,7 +548,8 @@ class CampaignReportShareableLinksView(APIView):
             links_payload.append({
                 'id': l.id,
                 'name': l.name or 'Untitled link',
-                'short_url': l.short_url,
+                # Derived from the current base (see link-clicks).
+                'short_url': build_campaign_short_url(l.tracking_token),
                 'destination_url': l.resolve_destination(),
                 'uses_campaign_default': not (l.destination_url or '').strip(),
                 'is_active': l.is_active,
