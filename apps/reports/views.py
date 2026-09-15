@@ -197,11 +197,24 @@ class CampaignReportLinkRecipientsView(APIView):
 
         # Index recipient links by contact_id
         from collections import defaultdict
+        from apps.reminders.services import reminder_eligibility
         contact_links_map = defaultdict(list)
         for rl in rl_qs:
             contact_links_map[rl.contact_id].append(rl)
         for rl in rc_qs:
             contact_links_map[rl.contact_id].append(rl)
+
+        # Index lifecycle messages by contact (single query): earliest
+        # INITIAL/REMINDER send + open timestamps per recipient. TEST
+        # messages are excluded so test mail never pollutes lifecycle state.
+        contact_msgs_map = defaultdict(list)
+        for m in campaign.messages.filter(
+            message_type__in=[
+                CampaignMessage.MessageType.INITIAL,
+                CampaignMessage.MessageType.REMINDER,
+            ]
+        ).only('contact_id', 'sent_at', 'opened_at'):
+            contact_msgs_map[m.contact_id].append(m)
 
         # Build combined recipient rows
         rows = []
@@ -259,12 +272,25 @@ class CampaignReportLinkRecipientsView(APIView):
             else:
                 click_type_str = "None"
 
+            # Lifecycle: email sent/opened, ODK completion, reminder verdict.
+            msgs = contact_msgs_map.get(contact.id, [])
+            sent_times = [m.sent_at for m in msgs if m.sent_at]
+            open_times = [m.opened_at for m in msgs if m.opened_at]
+            email_sent_at = min(sent_times) if sent_times else None
+            email_opened_at = min(open_times) if open_times else None
+            completed_at = contact.odk_submitted_at
+            verdict = reminder_eligibility(contact, campaign)
+
             rows.append({
                 'contact_id': contact.id,
                 'name': contact.name or f"{contact.first_name} {contact.last_name}".strip() or contact.email,
                 'email': contact.email,
+                'phone': contact.phone_number or '-',
                 'job_id': contact.job_id or '-',
                 'contact_status': contact.status,  # USED / UNUSED
+                'email_sent_at': email_sent_at.strftime('%d %b %Y, %I:%M %p') if email_sent_at else '-',
+                'email_opened_at': email_opened_at.strftime('%d %b %Y, %I:%M %p') if email_opened_at else '-',
+                'tracking_token': rlinks[0].tracking_token if rlinks else '',
                 'link_status': 'Clicked' if total_clicks > 0 else 'Not Clicked',
                 'first_click': first_click_at.strftime('%d %b %Y, %I:%M %p') if first_click_at else '-',
                 'last_click': last_click_at.strftime('%d %b %Y, %I:%M %p') if last_click_at else '-',
@@ -272,6 +298,10 @@ class CampaignReportLinkRecipientsView(APIView):
                 'human_clicks': human_clicks,
                 'bot_clicks': bot_clicks,
                 'click_type': click_type_str,
+                'completed_at': completed_at.strftime('%d %b %Y, %I:%M %p') if completed_at else '-',
+                'odk_submission_id': contact.odk_submission_id or '',
+                'reminder_eligible': verdict['eligible'],
+                'reminder_reason': verdict['reason'],
                 'link_name': display_link_name,
                 'short_url': sample_short_url,
                 'original_url': sample_orig_url,
@@ -287,15 +317,21 @@ class CampaignReportLinkRecipientsView(APIView):
             response['Content-Disposition'] = f'attachment; filename="campaign_{campaign.id}_link_tracking.csv"'
             writer = csv.writer(response)
             writer.writerow([
-                'Name', 'Email', 'JobID', 'Survey Status', 'Link Status',
+                'Name', 'Email', 'Phone', 'JobID', 'Survey Status',
+                'Email Sent', 'Email Opened', 'Link Status', 'Tracking Token',
                 'First Click', 'Last Click', 'Total Clicks', 'Human Clicks',
-                'Bot Clicks', 'Click Type', 'Link Name', 'Short URL', 'Original Destination'
+                'Bot Clicks', 'Click Type', 'Completed At', 'ODK Submission',
+                'Reminder Eligible', 'Reminder Reason',
+                'Link Name', 'Short URL', 'Original Destination'
             ])
             for r in rows:
                 writer.writerow([
-                    r['name'], r['email'], r['job_id'], r['contact_status'], r['link_status'],
+                    r['name'], r['email'], r['phone'], r['job_id'], r['contact_status'],
+                    r['email_sent_at'], r['email_opened_at'], r['link_status'], r['tracking_token'],
                     r['first_click'], r['last_click'], r['total_clicks'], r['human_clicks'],
-                    r['bot_clicks'], r['click_type'], r['link_name'], r['short_url'], r['original_url']
+                    r['bot_clicks'], r['click_type'], r['completed_at'], r['odk_submission_id'],
+                    'Yes' if r['reminder_eligible'] else 'No', r['reminder_reason'],
+                    r['link_name'], r['short_url'], r['original_url']
                 ])
             return response
 
@@ -309,9 +345,12 @@ class CampaignReportLinkRecipientsView(APIView):
             ws.title = "Link Tracking Report"
 
             headers = [
-                'Name', 'Email', 'JobID', 'Survey Status', 'Link Status',
+                'Name', 'Email', 'Phone', 'JobID', 'Survey Status',
+                'Email Sent', 'Email Opened', 'Link Status', 'Tracking Token',
                 'First Click', 'Last Click', 'Total Clicks', 'Human Clicks',
-                'Bot Clicks', 'Click Type', 'Link Name', 'Short URL', 'Original Destination'
+                'Bot Clicks', 'Click Type', 'Completed At', 'ODK Submission',
+                'Reminder Eligible', 'Reminder Reason',
+                'Link Name', 'Short URL', 'Original Destination'
             ]
             ws.append(headers)
 
@@ -326,9 +365,12 @@ class CampaignReportLinkRecipientsView(APIView):
             # Append rows
             for r in rows:
                 ws.append([
-                    r['name'], r['email'], r['job_id'], r['contact_status'], r['link_status'],
+                    r['name'], r['email'], r['phone'], r['job_id'], r['contact_status'],
+                    r['email_sent_at'], r['email_opened_at'], r['link_status'], r['tracking_token'],
                     r['first_click'], r['last_click'], r['total_clicks'], r['human_clicks'],
-                    r['bot_clicks'], r['click_type'], r['link_name'], r['short_url'], r['original_url']
+                    r['bot_clicks'], r['click_type'], r['completed_at'], r['odk_submission_id'],
+                    'Yes' if r['reminder_eligible'] else 'No', r['reminder_reason'],
+                    r['link_name'], r['short_url'], r['original_url']
                 ])
 
             # Auto adjust column widths
@@ -447,6 +489,8 @@ class CampaignReportLinkClicksView(APIView):
                 'clicked_at': e.clicked_at.isoformat(),
                 'contact_name': name,
                 'contact_email': email,
+                'contact_phone': e.contact.phone_number if e.contact else '-',
+                'tracking_token': e.recipient_link.tracking_token,
                 'link_name': sl.link_name or 'Tracked Link',
                 'short_url': e.recipient_link.short_url,
                 'destination_url': sl.original_url,
@@ -464,6 +508,8 @@ class CampaignReportLinkClicksView(APIView):
                 'clicked_at': e.clicked_at.isoformat(),
                 'contact_name': name,
                 'contact_email': email,
+                'contact_phone': e.contact.phone_number if e.contact else '-',
+                'tracking_token': e.link.tracking_token,
                 'link_name': (sl.link_name if sl else None) or e.link.name or 'Tracked Link',
                 # Derived from the current base: the stored short_url
                 # may have been minted under another environment.

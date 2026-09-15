@@ -90,7 +90,7 @@ class ContactViewSet(viewsets.ModelViewSet):
 
         # 1. Campaign & Reminder email dispatches
         for msg in contact.campaign_messages.select_related('campaign').all():
-            event_time = msg.sent_at or msg.delivered_at or msg.created_at
+            event_time = msg.sent_at or msg.delivered_at or msg.queued_at
             if msg.message_type == 'REMINDER':
                 title = f"Reminder email sent (Cycle #{msg.reminder_sequence})"
                 evt_type = 'REMINDER_SENT'
@@ -117,6 +117,18 @@ class ContactViewSet(viewsets.ModelViewSet):
                     'description': f"Campaign: {msg.campaign.name}",
                     'badge': 'purple',
                     'icon': 'mail-open'
+                })
+
+            if msg.status == 'SKIPPED':
+                reason = msg.skip_reason or msg.error_message or 'skipped'
+                events.append({
+                    'timestamp': event_time.isoformat() if event_time else None,
+                    'time_val': event_time,
+                    'type': 'REMINDER_SUPPRESSED',
+                    'title': 'Reminder suppressed' if msg.message_type == 'REMINDER' else 'Email skipped',
+                    'description': f"Campaign: {msg.campaign.name} &bull; Reason: {reason}",
+                    'badge': 'slate',
+                    'icon': 'bell-off'
                 })
 
         # 2. Link Click Events
