@@ -201,6 +201,10 @@ class CampaignTrackingLink(models.Model):
         help_text="Human readable label (e.g. Facebook Ad, Website Banner)"
     )
     tracking_token = models.CharField(max_length=16, unique=True, db_index=True)
+    # Creation-time cache of the absolute URL. NEVER emit this value:
+    # it may have been minted under another environment's base. The
+    # token is the identity; always derive the public URL with
+    # build_campaign_short_url(link.tracking_token) instead.
     short_url = models.CharField(max_length=500)
     # Optional per-link override. When blank, falls back to
     # Campaign.destination_url at redirect time.

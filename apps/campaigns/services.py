@@ -273,7 +273,7 @@ def wrap_tracking(
     """
     base_url = getattr(settings, 'BASE_TRACKING_URL', 'http://localhost:8000').rstrip('/')
 
-    from apps.tracking.utils import validate_destination_url
+    from apps.tracking.utils import validate_destination_url, build_campaign_short_url
 
     # Rewrite unsubscribe tag
     unsub_url = f"{base_url}/t/unsubscribe/{token_str}/"
@@ -367,7 +367,12 @@ def wrap_tracking(
                     try:
                         recipient_link = get_or_create_recipient_tracking_link(
                             campaign, contact, target_url, link_name)
-                        return html_module.escape(recipient_link.short_url)
+                        # Canonical rule: the token is the identity; the
+                        # public URL is always derived from the CURRENT
+                        # configuration. Never emit the stored short_url:
+                        # it may have been minted under another base.
+                        return html_module.escape(build_campaign_short_url(
+                            recipient_link.tracking_token))
                     except Exception:
                         pass
                 return html_module.escape(target_url)
@@ -377,7 +382,10 @@ def wrap_tracking(
                 try:
                     recipient_link = get_or_create_recipient_tracking_link(
                         campaign, contact, target_url, link_name)
-                    final_url = recipient_link.short_url
+                    # Derived from the current base (see above): the
+                    # stored short_url may belong to another environment.
+                    final_url = build_campaign_short_url(
+                        recipient_link.tracking_token)
                 except Exception as e:
                     # Fallback to legacy tracking if database error
                     encoded_url = urllib.parse.quote(target_url, safe='')
