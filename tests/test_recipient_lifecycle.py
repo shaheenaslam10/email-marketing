@@ -548,3 +548,128 @@ class RecipientLifecycleTests(TestCase):
                        b'Email Sent', b'Email Opened', b'Tracking Token',
                        b'Completed At', b'Survey completed', b'03001234567'):
             self.assertIn(needle, blob)
+
+
+class PersonCReminderTests(TestCase):
+    """Person C: assigned -> sent -> NO open -> NO click -> reminders anyway.
+
+    Open/click must never gate reminder eligibility: only completion (USED),
+    suppression flags, campaign state and reminder config decide.
+    """
+
+    def setUp(self):
+        self.sender = Sender.objects.create(
+            name='Survey Team', email='survey@marketing.iriscommunications.cloud',
+            provider_type=Sender.ProviderType.SANDBOX, is_active=True)
+        self.group = ContactGroup.objects.create(name='PersonC Group')
+        self.odk_conn = ODKConnection.objects.create(
+            name='Mock ODK', base_url='http://localhost:8000/sandbox/api/odk',
+            is_mock_sandbox=True, status=ODKConnection.Status.CONNECTED)
+        self.odk_project = ODKProject.objects.create(
+            connection=self.odk_conn, odk_id=1, name='Pulse 2026')
+        self.odk_form = ODKForm.objects.create(
+            project=self.odk_project, odk_xml_form_id='pulse_v1', name='Pulse_V1')
+        ODKFieldMapping.objects.create(form=self.odk_form, job_id_field='job_id')
+        self.campaign = Campaign.objects.create(
+            name='PersonC Survey', campaign_type=Campaign.Type.SURVEY_REMINDER,
+            status=Campaign.Status.ACTIVE, sender=self.sender,
+            odk_form=self.odk_form, subject='Survey for {{job_id}}',
+            html_content='<p>Hi {{first_name}}</p><p>{{survey_tracking_url}}</p>',
+            destination_url=ODK_URL)
+        self.campaign.groups.add(self.group)
+        ReminderConfiguration.objects.create(
+            campaign=self.campaign, enabled=True, interval_value=2,
+            interval_unit=ReminderConfiguration.Unit.DAYS,
+            max_reminders=5, sync_odk_before_send=True, stop_when_used=True)
+        self.c = Contact.objects.create(
+            name='Person C', first_name='Person', email='personc@example.com',
+            phone_number='03009990000', job_id='JOB-C-1',
+            status=Contact.UsageStatus.UNUSED)
+        self.group.contacts.add(self.c)
+
+    def _reminders(self):
+        return CampaignMessage.objects.filter(
+            campaign=self.campaign, contact=self.c,
+            message_type=CampaignMessage.MessageType.REMINDER).order_by('reminder_sequence')
+
+    def test_person_c_reminded_until_completed(self):
+        # initial sent; never opened, never clicked
+        self.assertEqual(launch_initial_campaign(self.campaign), 1)
+        initial = CampaignMessage.objects.get(
+            campaign=self.campaign, contact=self.c,
+            message_type=CampaignMessage.MessageType.INITIAL)
+        self.assertEqual(initial.status, CampaignMessage.Status.DELIVERED)
+        self.assertIsNone(initial.opened_at)
+        self.assertIsNone(initial.clicked_at)
+
+        # 1. never opened + never clicked + incomplete -> eligible
+        self.assertEqual(
+            reminder_eligibility(self.c, self.campaign),
+            {'eligible': True, 'reason': 'Survey not completed'})
+
+        # 2. first reminder sent
+        cycle1 = execute_reminder_cycle(self.campaign)
+        self.assertEqual(cycle1.eligible_count, 1)
+        self.assertEqual(cycle1.sent_count, 1)
+        self.assertEqual(
+            self._reminders().get(reminder_sequence=1).status,
+            CampaignMessage.Status.DELIVERED)
+        self.assertEqual(
+            SandboxEmail.objects.filter(to_email='personc@example.com').count(), 2)
+
+        # 3. still incomplete -> next cycle eligible again
+        self.c.refresh_from_db()
+        self.assertEqual(self.c.status, Contact.UsageStatus.UNUSED)
+        cycle2 = execute_reminder_cycle(self.campaign)
+        self.assertEqual(cycle2.cycle_number, 2)
+        self.assertEqual(
+            self._reminders().get(reminder_sequence=2).status,
+            CampaignMessage.Status.DELIVERED)
+
+        # 4. completion suppresses all future reminders
+        MockODKSubmission.objects.create(
+            submission_id='sub-personc-1', project_id='1', form_id='pulse_v1',
+            job_id='JOB-C-1', respondent_email='personc@example.com')
+        run_odk_sync(self.odk_form)
+        self.c.refresh_from_db()
+        self.assertEqual(self.c.status, Contact.UsageStatus.USED)
+        cycle3 = execute_reminder_cycle(self.campaign)
+        self.assertEqual(cycle3.eligible_count, 0)
+        self.assertEqual(self._reminders().count(), 2)
+        self.assertFalse(reminder_eligibility(self.c, self.campaign)['eligible'])
+
+    def test_person_c_pause_resume_cancel(self):
+        launch_initial_campaign(self.campaign)
+
+        # 5. paused -> reminder sending blocked
+        self.campaign.status = Campaign.Status.PAUSED
+        self.campaign.save(update_fields=['status'])
+        self.assertEqual(
+            reminder_eligibility(self.c, self.campaign)['reason'], 'Campaign paused')
+        with self.assertRaises(ValueError):
+            execute_reminder_cycle(self.campaign)
+        orphan = CampaignMessage.objects.create(
+            campaign=self.campaign, contact=self.c,
+            message_type=CampaignMessage.MessageType.REMINDER,
+            reminder_sequence=9, to_email=self.c.email, subject='q',
+            status=CampaignMessage.Status.QUEUED)
+        self.assertFalse(process_single_campaign_message(orphan.id))
+        orphan.refresh_from_db()
+        self.assertEqual(orphan.status, CampaignMessage.Status.SKIPPED)
+        self.assertEqual(orphan.skip_reason, CampaignMessage.SkipReason.CAMPAIGN_PAUSED)
+
+        # 6. resumed -> incomplete recipient eligible again, reminder sent
+        self.campaign.status = Campaign.Status.ACTIVE
+        self.campaign.save(update_fields=['status'])
+        self.assertTrue(reminder_eligibility(self.c, self.campaign)['eligible'])
+        cycle = execute_reminder_cycle(self.campaign)
+        self.assertEqual(cycle.eligible_count, 1)
+        self.assertEqual(
+            self._reminders().get(reminder_sequence=1).status,
+            CampaignMessage.Status.DELIVERED)
+
+        # 7. cancelled -> reminder sending blocked
+        self.campaign.status = Campaign.Status.CANCELLED
+        self.campaign.save(update_fields=['status'])
+        with self.assertRaises(ValueError):
+            execute_reminder_cycle(self.campaign)
