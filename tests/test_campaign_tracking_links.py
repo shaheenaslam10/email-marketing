@@ -336,3 +336,69 @@ class CampaignTrackingLinkTests(TestCase):
             'https://x.com/a?b=2&u=1',
         )
         self.assertEqual(append_query_params('https://x.com/a', ''), 'https://x.com/a')
+
+
+class Step1CreatePayloadTests(TestCase):
+    """Server-side contract behind the Step 1 create form.
+
+    The form posts the per-link destination exactly as typed; when it is
+    blank the link resolves through the SAVED campaign default; when
+    neither exists creation is refused with the established message.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='step1_admin', email='step1@example.com', password='password123'
+        )
+        self.client = Client()
+        self.client.force_login(self.user)
+        self.anon = Client()
+        self.sender = Sender.objects.create(
+            name='Survey Team',
+            email='survey@marketing.iriscommunications.cloud',
+            provider_type=Sender.ProviderType.SANDBOX,
+        )
+        self.campaign = Campaign.objects.create(
+            name='Step1 Campaign',
+            subject='Hello',
+            sender=self.sender,
+            status=Campaign.Status.ACTIVE,
+            html_content='<p>Hello</p>',
+        )
+
+    def _post(self, payload):
+        return self.client.post(
+            f'/api/campaigns/{self.campaign.id}/tracking-links/',
+            data=json.dumps(payload),
+            content_type='application/json',
+        )
+
+    def test_posted_destination_is_stored_exactly_and_redirects(self):
+        resp = self._post({'name': 'Test Survey', 'destination_url': 'https://example.com/test'})
+        self.assertEqual(resp.status_code, 201)
+        link = CampaignTrackingLink.objects.get(tracking_token=resp.json()['tracking_token'])
+        self.assertEqual(link.name, 'Test Survey')
+        self.assertEqual(link.destination_url, 'https://example.com/test')
+        click = self.anon.get(f'/c/{link.tracking_token}/', HTTP_USER_AGENT=HUMAN_UA)
+        self.assertEqual(click.status_code, 302)
+        self.assertEqual(click.url, 'https://example.com/test')
+
+    def test_blank_per_link_destination_uses_saved_campaign_default(self):
+        self.campaign.destination_url = 'https://default.example.com/survey'
+        self.campaign.save(update_fields=['destination_url'])
+        resp = self._post({'name': 'Ad', 'destination_url': ''})
+        self.assertEqual(resp.status_code, 201)
+        link = CampaignTrackingLink.objects.get(tracking_token=resp.json()['tracking_token'])
+        self.assertEqual(link.destination_url, '')
+        click = self.anon.get(f'/c/{link.tracking_token}/', HTTP_USER_AGENT=HUMAN_UA)
+        self.assertEqual(click.status_code, 302)
+        self.assertEqual(click.url, 'https://default.example.com/survey')
+
+    def test_blank_everywhere_keeps_validation_error(self):
+        resp = self._post({'name': '', 'destination_url': ''})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn(
+            'Set a destination URL for this link or a default destination URL',
+            resp.json()['destination_url'][0],
+        )
+        self.assertEqual(CampaignTrackingLink.objects.count(), 0)
