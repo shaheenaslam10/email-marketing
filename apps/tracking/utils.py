@@ -37,20 +37,58 @@ def validate_destination_url(url: str) -> bool:
         return False
 
 
-def get_shortener_base_url(request=None) -> str:
+def generate_unique_tracking_token(model, length: int = 8, max_attempts: int = 25) -> str:
     """
-    Returns the branded short URL base domain.
-    Defaults to https://marketing.iriscommunications.cloud
+    Generates a cryptographically secure token that is unique for the
+    given model's ``tracking_token`` field. Raises RuntimeError if a
+    unique token cannot be found (practically impossible: 62^8 combos).
     """
-    configured = getattr(settings, 'SHORTENER_BASE_URL', None)
+    for _ in range(max_attempts):
+        token = generate_secure_token(length)
+        if not model.objects.filter(tracking_token=token).exists():
+            return token
+    raise RuntimeError(f"Could not generate a unique tracking token for {model.__name__}")
+
+
+def build_campaign_short_url(token: str) -> str:
+    """Builds the public branded URL for a campaign tracking link token.
+
+    Canonical URL builder shared by Step 1 (shareable) and Step 5
+    (per-recipient) link creation. The base comes solely from
+    configuration (see get_shortener_base_url); the inbound request
+    host is never consulted, so generation cannot leak environments.
+    """
+    return f"{get_shortener_base_url()}/c/{token}"
+
+
+def append_query_params(destination_url: str, query_string: str) -> str:
+    """
+    Passes inbound query parameters (e.g. utm_* tags on the short URL)
+    through to the destination URL so downstream analytics keep working.
+    """
+    if not query_string:
+        return destination_url
+    separator = '&' if '?' in destination_url else '?'
+    return f"{destination_url}{separator}{query_string}"
+
+
+def get_shortener_base_url() -> str:
+    """
+    Canonical base URL embedded in generated /c/<token> tracking links.
+    Single source of truth used by Step 1 and Step 5 creation paths.
+    Honours explicit configuration exactly as set (including localhost
+    for local development). The production default lives in
+    core/settings.py (SHORTENER_BASE_URL); no domain is hard-coded here
+    and the inbound request host is never used as a fallback.
+    """
+    configured = (getattr(settings, 'SHORTENER_BASE_URL', None)
+                  or getattr(settings, 'BASE_TRACKING_URL', None))
     if not configured:
-        configured = getattr(settings, 'BASE_TRACKING_URL', None)
-    if not configured or configured in ('http://localhost:8000', 'http://127.0.0.1:8000'):
-        # If in debug mode and a request is provided, we can use request host, but prefer branded domain
-        if request and getattr(settings, 'USE_REQUEST_HOST_FOR_TRACKING', False):
-            configured = f"{request.scheme}://{request.get_host()}"
-        else:
-            configured = 'https://marketing.iriscommunications.cloud'
+        # Unreachable in practice: core/settings.py always defines
+        # SHORTENER_BASE_URL (production default). Localhost fails safe
+        # for a misconfigured tree: it never mints production-based URLs
+        # whose rows live in a different database.
+        configured = 'http://localhost:8000'
 
     return configured.rstrip('/')
 

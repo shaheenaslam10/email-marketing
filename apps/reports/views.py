@@ -113,6 +113,22 @@ class CampaignReportMessagesView(APIView):
         })
 
 
+def _recipient_link_label(rl):
+    """Display name for a legacy RecipientLink or RECIPIENT /c/ link."""
+    sl = getattr(rl, 'shortened_link', None)
+    if sl is not None:
+        return sl.link_name or sl.original_url[:35]
+    return getattr(rl, 'name', '') or 'Tracked Link'
+
+
+def _recipient_link_destination(rl):
+    """Destination URL for a legacy RecipientLink or RECIPIENT /c/ link."""
+    sl = getattr(rl, 'shortened_link', None)
+    if sl is not None:
+        return sl.original_url
+    return getattr(rl, 'destination_url', '') or ''
+
+
 class CampaignReportLinkRecipientsView(APIView):
     """
     Recipient-Level Link Tracking Report (Requirements 6, 8, 9, 14).
@@ -166,16 +182,39 @@ class CampaignReportLinkRecipientsView(APIView):
                 Q(job_id__icontains=search_query)
             )
 
-        # Get RecipientLink records for this campaign
+        # Get recipient links for this campaign: legacy root-level
+        # RecipientLink rows plus RECIPIENT-type /c/ links. SHAREABLE
+        # links are anonymous and never enter this per-recipient view.
+        from apps.tracking.models import CampaignTrackingLink
         rl_qs = RecipientLink.objects.filter(campaign=campaign).select_related('shortened_link', 'contact')
+        rc_qs = CampaignTrackingLink.objects.filter(
+            campaign=campaign,
+            link_type=CampaignTrackingLink.LinkType.RECIPIENT,
+        ).select_related('shortened_link', 'contact')
         if link_id_filter and link_id_filter.isdigit():
             rl_qs = rl_qs.filter(shortened_link_id=int(link_id_filter))
+            rc_qs = rc_qs.filter(shortened_link_id=int(link_id_filter))
 
         # Index recipient links by contact_id
         from collections import defaultdict
+        from apps.reminders.services import reminder_eligibility
         contact_links_map = defaultdict(list)
         for rl in rl_qs:
             contact_links_map[rl.contact_id].append(rl)
+        for rl in rc_qs:
+            contact_links_map[rl.contact_id].append(rl)
+
+        # Index lifecycle messages by contact (single query): earliest
+        # INITIAL/REMINDER send + open timestamps per recipient. TEST
+        # messages are excluded so test mail never pollutes lifecycle state.
+        contact_msgs_map = defaultdict(list)
+        for m in campaign.messages.filter(
+            message_type__in=[
+                CampaignMessage.MessageType.INITIAL,
+                CampaignMessage.MessageType.REMINDER,
+            ]
+        ).only('contact_id', 'sent_at', 'opened_at'):
+            contact_msgs_map[m.contact_id].append(m)
 
         # Build combined recipient rows
         rows = []
@@ -218,10 +257,10 @@ class CampaignReportLinkRecipientsView(APIView):
                 continue
 
             # Link details summary
-            link_names = [rl.shortened_link.link_name or rl.shortened_link.original_url[:35] for rl in rlinks]
+            link_names = [_recipient_link_label(rl) for rl in rlinks]
             display_link_name = ", ".join(link_names) if link_names else "No Link Generated"
             sample_short_url = rlinks[0].short_url if rlinks else ""
-            sample_orig_url = rlinks[0].shortened_link.original_url if rlinks else ""
+            sample_orig_url = _recipient_link_destination(rlinks[0]) if rlinks else ""
 
             # Click type classification
             if bot_clicks > 0 and human_clicks == 0:
@@ -233,12 +272,25 @@ class CampaignReportLinkRecipientsView(APIView):
             else:
                 click_type_str = "None"
 
+            # Lifecycle: email sent/opened, ODK completion, reminder verdict.
+            msgs = contact_msgs_map.get(contact.id, [])
+            sent_times = [m.sent_at for m in msgs if m.sent_at]
+            open_times = [m.opened_at for m in msgs if m.opened_at]
+            email_sent_at = min(sent_times) if sent_times else None
+            email_opened_at = min(open_times) if open_times else None
+            completed_at = contact.odk_submitted_at
+            verdict = reminder_eligibility(contact, campaign)
+
             rows.append({
                 'contact_id': contact.id,
                 'name': contact.name or f"{contact.first_name} {contact.last_name}".strip() or contact.email,
                 'email': contact.email,
+                'phone': contact.phone_number or '-',
                 'job_id': contact.job_id or '-',
                 'contact_status': contact.status,  # USED / UNUSED
+                'email_sent_at': email_sent_at.strftime('%d %b %Y, %I:%M %p') if email_sent_at else '-',
+                'email_opened_at': email_opened_at.strftime('%d %b %Y, %I:%M %p') if email_opened_at else '-',
+                'tracking_token': rlinks[0].tracking_token if rlinks else '',
                 'link_status': 'Clicked' if total_clicks > 0 else 'Not Clicked',
                 'first_click': first_click_at.strftime('%d %b %Y, %I:%M %p') if first_click_at else '-',
                 'last_click': last_click_at.strftime('%d %b %Y, %I:%M %p') if last_click_at else '-',
@@ -246,6 +298,10 @@ class CampaignReportLinkRecipientsView(APIView):
                 'human_clicks': human_clicks,
                 'bot_clicks': bot_clicks,
                 'click_type': click_type_str,
+                'completed_at': completed_at.strftime('%d %b %Y, %I:%M %p') if completed_at else '-',
+                'odk_submission_id': contact.odk_submission_id or '',
+                'reminder_eligible': verdict['eligible'],
+                'reminder_reason': verdict['reason'],
                 'link_name': display_link_name,
                 'short_url': sample_short_url,
                 'original_url': sample_orig_url,
@@ -261,15 +317,21 @@ class CampaignReportLinkRecipientsView(APIView):
             response['Content-Disposition'] = f'attachment; filename="campaign_{campaign.id}_link_tracking.csv"'
             writer = csv.writer(response)
             writer.writerow([
-                'Name', 'Email', 'JobID', 'Survey Status', 'Link Status',
+                'Name', 'Email', 'Phone', 'JobID', 'Survey Status',
+                'Email Sent', 'Email Opened', 'Link Status', 'Tracking Token',
                 'First Click', 'Last Click', 'Total Clicks', 'Human Clicks',
-                'Bot Clicks', 'Click Type', 'Link Name', 'Short URL', 'Original Destination'
+                'Bot Clicks', 'Click Type', 'Completed At', 'ODK Submission',
+                'Reminder Eligible', 'Reminder Reason',
+                'Link Name', 'Short URL', 'Original Destination'
             ])
             for r in rows:
                 writer.writerow([
-                    r['name'], r['email'], r['job_id'], r['contact_status'], r['link_status'],
+                    r['name'], r['email'], r['phone'], r['job_id'], r['contact_status'],
+                    r['email_sent_at'], r['email_opened_at'], r['link_status'], r['tracking_token'],
                     r['first_click'], r['last_click'], r['total_clicks'], r['human_clicks'],
-                    r['bot_clicks'], r['click_type'], r['link_name'], r['short_url'], r['original_url']
+                    r['bot_clicks'], r['click_type'], r['completed_at'], r['odk_submission_id'],
+                    'Yes' if r['reminder_eligible'] else 'No', r['reminder_reason'],
+                    r['link_name'], r['short_url'], r['original_url']
                 ])
             return response
 
@@ -283,9 +345,12 @@ class CampaignReportLinkRecipientsView(APIView):
             ws.title = "Link Tracking Report"
 
             headers = [
-                'Name', 'Email', 'JobID', 'Survey Status', 'Link Status',
+                'Name', 'Email', 'Phone', 'JobID', 'Survey Status',
+                'Email Sent', 'Email Opened', 'Link Status', 'Tracking Token',
                 'First Click', 'Last Click', 'Total Clicks', 'Human Clicks',
-                'Bot Clicks', 'Click Type', 'Link Name', 'Short URL', 'Original Destination'
+                'Bot Clicks', 'Click Type', 'Completed At', 'ODK Submission',
+                'Reminder Eligible', 'Reminder Reason',
+                'Link Name', 'Short URL', 'Original Destination'
             ]
             ws.append(headers)
 
@@ -300,9 +365,12 @@ class CampaignReportLinkRecipientsView(APIView):
             # Append rows
             for r in rows:
                 ws.append([
-                    r['name'], r['email'], r['job_id'], r['contact_status'], r['link_status'],
+                    r['name'], r['email'], r['phone'], r['job_id'], r['contact_status'],
+                    r['email_sent_at'], r['email_opened_at'], r['link_status'], r['tracking_token'],
                     r['first_click'], r['last_click'], r['total_clicks'], r['human_clicks'],
-                    r['bot_clicks'], r['click_type'], r['link_name'], r['short_url'], r['original_url']
+                    r['bot_clicks'], r['click_type'], r['completed_at'], r['odk_submission_id'],
+                    'Yes' if r['reminder_eligible'] else 'No', r['reminder_reason'],
+                    r['link_name'], r['short_url'], r['original_url']
                 ])
 
             # Auto adjust column widths
@@ -351,6 +419,225 @@ class CampaignReportLinkRecipientsView(APIView):
             'page_size': page_size if page_size_str != 'all' else 'all',
             'total_pages': total_pages,
             'recipients': paginated_rows
+        })
+
+
+class CampaignReportLinkClicksView(APIView):
+    """
+    Recipient Click Activity: per-click events for recipient email links.
+    Unions legacy root-level LinkClickEvent rows with RECIPIENT-type /c/
+    visits, newest first. Shareable (anonymous) visits are excluded here;
+    they belong to the shareable-links report. IP addresses are stored but
+    excluded from this API (privacy; staff can use Django admin).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            campaign = Campaign.objects.get(pk=pk)
+        except Campaign.DoesNotExist:
+            return Response({'error': 'Campaign not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        from apps.tracking.models import (
+            ShortenedLink, LinkClickEvent,
+            CampaignTrackingLink, CampaignLinkClickEvent,
+        )
+        from apps.tracking.utils import build_campaign_short_url
+
+        try:
+            limit = int(request.GET.get('limit', 50))
+        except (TypeError, ValueError):
+            limit = 50
+        limit = max(1, min(limit, 200))
+
+        link_id = (request.GET.get('link_id') or '').strip()
+        selected_sl_id = int(link_id) if link_id.isdigit() else None
+
+        legacy_qs = LinkClickEvent.objects.filter(
+            campaign=campaign
+        ).select_related('recipient_link__shortened_link', 'contact')
+        new_qs = CampaignLinkClickEvent.objects.filter(
+            campaign=campaign,
+            link__link_type=CampaignTrackingLink.LinkType.RECIPIENT,
+        ).select_related('link__shortened_link', 'contact')
+        if selected_sl_id:
+            legacy_qs = legacy_qs.filter(
+                recipient_link__shortened_link_id=selected_sl_id)
+            new_qs = new_qs.filter(link__shortened_link_id=selected_sl_id)
+
+        def click_type_label(ct):
+            return {
+                'HUMAN': 'Human',
+                'SUSPECTED_BOT': 'Suspected Bot',
+                'UNKNOWN': 'Unknown',
+            }.get(ct, 'Unknown')
+
+        def contact_display(contact):
+            if not contact:
+                return '-', '-'
+            name = contact.name or (
+                (contact.first_name or '') + ' ' + (contact.last_name or '')
+            ).strip() or contact.email
+            return name, contact.email
+
+        rows = []
+        for e in legacy_qs.order_by('-clicked_at', '-id')[:limit]:
+            sl = e.recipient_link.shortened_link
+            name, email = contact_display(e.contact)
+            rows.append({
+                '_sort': (e.clicked_at, 'L', e.id),
+                'clicked_at': e.clicked_at.isoformat(),
+                'contact_name': name,
+                'contact_email': email,
+                'contact_phone': e.contact.phone_number if e.contact else '-',
+                'tracking_token': e.recipient_link.tracking_token,
+                'link_name': sl.link_name or 'Tracked Link',
+                'short_url': e.recipient_link.short_url,
+                'destination_url': sl.original_url,
+                'click_type': click_type_label(e.click_type),
+                'browser': e.browser or 'Unknown',
+                'operating_system': e.operating_system or 'Unknown',
+                'device_type': e.device_type or 'Unknown',
+                'referrer': e.referrer or '',
+            })
+        for e in new_qs.order_by('-clicked_at', '-id')[:limit]:
+            sl = e.link.shortened_link
+            name, email = contact_display(e.contact)
+            rows.append({
+                '_sort': (e.clicked_at, 'C', e.id),
+                'clicked_at': e.clicked_at.isoformat(),
+                'contact_name': name,
+                'contact_email': email,
+                'contact_phone': e.contact.phone_number if e.contact else '-',
+                'tracking_token': e.link.tracking_token,
+                'link_name': (sl.link_name if sl else None) or e.link.name or 'Tracked Link',
+                # Derived from the current base: the stored short_url
+                # may have been minted under another environment.
+                'short_url': build_campaign_short_url(
+                    e.link.tracking_token),
+                'destination_url': (e.link.destination_url or (sl.original_url if sl else '') or ''),
+                'click_type': click_type_label(e.click_type),
+                'browser': e.browser or 'Unknown',
+                'operating_system': e.operating_system or 'Unknown',
+                'device_type': e.device_type or 'Unknown',
+                'referrer': e.referrer or '',
+            })
+        rows.sort(key=lambda r: r['_sort'], reverse=True)
+        events = []
+        for r in rows[:limit]:
+            del r['_sort']
+            events.append(r)
+
+        links = [
+            {'id': sl.id, 'name': sl.link_name or sl.original_url[:40]}
+            for sl in ShortenedLink.objects.filter(
+                campaign=campaign).order_by('link_name', 'id')
+        ]
+
+        return Response({
+            'campaign_id': campaign.id,
+            'campaign_name': campaign.name,
+            'total_events': legacy_qs.count() + new_qs.count(),
+            'links': links,
+            'events': events,
+        })
+
+
+class CampaignReportShareableLinksView(APIView):
+    """
+    Shareable / Anonymous Link Activity Report.
+    Covers SHAREABLE-type CampaignTrackingLink rows (/c/<token>/) and
+    their CampaignLinkClickEvent visits. Fully separate from
+    recipient-level email tracking: anonymous visits carry no contact
+    attribution, so no "unique clicks" metric is offered (no visitor
+    identity is tracked). RECIPIENT-type /c/ links are excluded here;
+    they appear in the recipient Link Clicks report instead.
+    Visitor IP addresses are stored but intentionally excluded from this
+    API (privacy; available to staff via Django admin).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            campaign = Campaign.objects.get(pk=pk)
+        except Campaign.DoesNotExist:
+            return Response({'error': 'Campaign not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        from apps.tracking.models import CampaignTrackingLink, CampaignLinkClickEvent
+        from apps.tracking.utils import build_campaign_short_url
+
+        links = list(campaign.tracking_links.filter(
+            link_type=CampaignTrackingLink.LinkType.SHAREABLE
+        ).order_by('-created_at'))
+
+        link_id = (request.GET.get('link_id') or '').strip()
+        selected_link = None
+        if link_id.isdigit():
+            selected_link = next((l for l in links if l.id == int(link_id)), None)
+
+        try:
+            limit = int(request.GET.get('limit', 50))
+        except (TypeError, ValueError):
+            limit = 50
+        limit = max(1, min(limit, 200))
+
+        events_qs = CampaignLinkClickEvent.objects.filter(
+            campaign=campaign,
+            link__link_type=CampaignTrackingLink.LinkType.SHAREABLE,
+        )
+        if selected_link:
+            events_qs = events_qs.filter(link=selected_link)
+        events = list(events_qs.select_related('link').order_by('-clicked_at', '-id')[:limit])
+
+        links_payload = []
+        for l in links:
+            links_payload.append({
+                'id': l.id,
+                'name': l.name or 'Untitled link',
+                # Derived from the current base (see link-clicks).
+                'short_url': build_campaign_short_url(l.tracking_token),
+                'destination_url': l.resolve_destination(),
+                'uses_campaign_default': not (l.destination_url or '').strip(),
+                'is_active': l.is_active,
+                'click_count': l.click_count,
+                'human_click_count': l.human_click_count,
+                'bot_click_count': l.bot_click_count,
+                'first_clicked_at': l.first_clicked_at.isoformat() if l.first_clicked_at else None,
+                'last_clicked_at': l.last_clicked_at.isoformat() if l.last_clicked_at else None,
+            })
+
+        def click_type_label(ct):
+            return {
+                'HUMAN': 'Human',
+                'SUSPECTED_BOT': 'Suspected Bot',
+                'UNKNOWN': 'Unknown',
+            }.get(ct, 'Unknown')
+
+        events_payload = [{
+            'clicked_at': e.clicked_at.isoformat() if e.clicked_at else None,
+            'link_id': e.link_id,
+            'link_name': ((e.link.name if e.link else '') or 'Untitled link'),
+            'click_type': click_type_label(e.click_type),
+            'browser': e.browser or 'Other',
+            'operating_system': e.operating_system or 'Other',
+            'device_type': e.device_type or 'Unknown',
+            'referrer': e.referrer or '',
+        } for e in events]
+
+        return Response({
+            'campaign_id': campaign.id,
+            'campaign_name': campaign.name,
+            'campaign_destination_url': campaign.destination_url or '',
+            'totals': {
+                'links': len(links),
+                'active_links': sum(1 for l in links if l.is_active),
+                'total_clicks': sum(l.click_count for l in links),
+                'human_clicks': sum(l.human_click_count for l in links),
+                'bot_clicks': sum(l.bot_click_count for l in links),
+            },
+            'links': links_payload,
+            'recent_events': events_payload,
+            'recent_limit': limit,
         })
 
 

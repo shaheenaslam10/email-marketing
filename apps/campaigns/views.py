@@ -1,4 +1,5 @@
 import re
+import uuid
 import logging
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
@@ -9,7 +10,7 @@ from apps.contacts.models import Contact
 from apps.senders.models import Sender
 from apps.groups.models import TestEmailGroup, ContactGroup
 from apps.email_providers.providers import get_email_provider
-from .services import render_content_variables, validate_campaign_variables
+from .services import render_content_variables, validate_campaign_variables, wrap_tracking, expand_tracking_placeholders, create_shareable_tracking_link
 from apps.reminders.services import launch_initial_campaign
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,20 @@ class CampaignViewSet(viewsets.ModelViewSet):
         req_html = request.data.get('html_content') if request.data.get('html_content') is not None else campaign.html_content
 
         subject = render_content_variables(req_subject, contact)
-        html_content = render_content_variables(req_html, contact)
+        html_content = render_content_variables(
+            expand_tracking_placeholders(req_html, campaign, contact), contact)
+        # Resolve tracked links with the same generation logic as dispatch
+        # so the preview shows real branded /c/ recipient URLs instead of
+        # a literal {unique_link} placeholder (browser URL serialization
+        # would otherwise display it as %7Bunique_link%7D).
+        html_content = wrap_tracking(
+            html_content=html_content,
+            token_str=str(uuid.uuid4()),
+            track_opens=campaign.track_opens,
+            track_clicks=campaign.track_clicks,
+            campaign=campaign,
+            contact=contact,
+        )
 
         return Response({
             'contact': {
@@ -77,8 +91,29 @@ class CampaignViewSet(viewsets.ModelViewSet):
         subject = request.data.get('subject', '')
         html_content = request.data.get('html_content', '')
 
+        # Optional campaign context (wizard passes campaign_id when editing
+        # a saved campaign) so preview links use the same branded /c/
+        # recipient URLs as dispatch. Without a campaign the same
+        # wrap_tracking() fallback as standalone test emails applies.
+        campaign = None
+        campaign_id = request.data.get('campaign_id') or request.data.get('campaign_pk')
+        if campaign_id:
+            try:
+                campaign = Campaign.objects.filter(pk=int(campaign_id)).first()
+            except (TypeError, ValueError):
+                campaign = None
+
         rendered_subject = render_content_variables(subject, contact)
-        rendered_html = render_content_variables(html_content, contact)
+        rendered_html = render_content_variables(
+            expand_tracking_placeholders(html_content, campaign, contact), contact)
+        rendered_html = wrap_tracking(
+            html_content=rendered_html,
+            token_str=str(uuid.uuid4()),
+            track_opens=campaign.track_opens if campaign else True,
+            track_clicks=campaign.track_clicks if campaign else True,
+            campaign=campaign,
+            contact=contact,
+        )
 
         return Response({
             'contact': {
@@ -214,17 +249,35 @@ class CampaignViewSet(viewsets.ModelViewSet):
             if contact:
                 # Interpolate sample contact data but customize recipient email
                 rendered_subj = f"[TEST] {render_content_variables(base_subject, contact)}"
-                rendered_html = render_content_variables(base_html, contact)
+                rendered_html = render_content_variables(
+                    expand_tracking_placeholders(base_html, campaign, contact), contact)
             else:
                 rendered_subj = f"[TEST] {base_subject}"
-                rendered_html = base_html
+                rendered_html = expand_tracking_placeholders(base_html, campaign, None)
+
+            # Resolve tracked links exactly like production dispatch so test
+            # emails carry working URLs (recipient-specific short URLs when a
+            # campaign + sample contact exist, legacy redirect fallback
+            # otherwise) instead of a literal {unique_link} placeholder.
+            final_test_html = wrap_tracking(
+                html_content=rendered_html,
+                token_str=str(uuid.uuid4()),
+                track_opens=campaign.track_opens if campaign else True,
+                track_clicks=campaign.track_clicks if campaign else True,
+                campaign=campaign,
+                contact=contact,
+            )
 
             res = provider.send_email(
                 to_email=to_addr,
                 subject=rendered_subj,
-                html_content=rendered_html,
+                html_content=final_test_html,
                 text_content="",
-                reply_to=reply_to
+                reply_to=reply_to,
+                log_context={
+                    'campaign_id': campaign.id if campaign else None,
+                    'source': 'test-email',
+                },
             )
 
             # Record in SandboxEmail for instant in-app webmail inspection
@@ -236,7 +289,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
                     from_email=sender_email,
                     reply_to=reply_to or '',
                     subject=rendered_subj,
-                    html_content=rendered_html,
+                    html_content=final_test_html,
                     text_content="",
                     provider_type=sender.provider_type if sender else 'SANDBOX'
                 )
@@ -448,6 +501,108 @@ class CampaignViewSet(viewsets.ModelViewSet):
         campaign.save(update_fields=['status'])
         return Response({'status': 'cancelled', 'message': 'Campaign cancelled.'})
 
+    @action(detail=True, methods=['get', 'post'], url_path='tracking-links')
+    def tracking_links(self, request, pk=None):
+        """
+        Campaign-level shareable tracking links (anonymous, for external
+        distribution). GET lists, POST generates a new link.
+        Only SHAREABLE links are listed here; per-recipient /c/ email
+        links are managed automatically and stay out of this UI.
+        """
+        from apps.tracking.models import CampaignTrackingLink
+        from apps.tracking.serializers import CampaignTrackingLinkSerializer
+        campaign = self.get_object()
+
+        if request.method == 'GET':
+            links = campaign.tracking_links.filter(
+                link_type=CampaignTrackingLink.LinkType.SHAREABLE
+            ).order_by('-created_at')
+            return Response({
+                'campaign_id': campaign.id,
+                'destination_url': campaign.destination_url or '',
+                'links': CampaignTrackingLinkSerializer(links, many=True).data,
+            })
+
+        serializer = CampaignTrackingLinkSerializer(
+            data=request.data, context={'campaign': campaign})
+        serializer.is_valid(raise_exception=True)
+        # Canonical shareable creation (same token generator, URL builder
+        # and destination rule as the per-recipient Step 5 path).
+        link = create_shareable_tracking_link(
+            campaign,
+            name=serializer.validated_data.get('name') or '',
+            destination_url=serializer.validated_data.get('destination_url') or '',
+        )
+        if not serializer.validated_data.get('is_active', True):
+            link.is_active = False
+            link.save(update_fields=['is_active', 'updated_at'])
+        return Response(
+            CampaignTrackingLinkSerializer(link).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(
+        detail=True, methods=['get', 'put', 'patch', 'delete'],
+        url_path=r'tracking-links/(?P<link_id>[^/.]+)',
+    )
+    def tracking_link_detail(self, request, pk=None, link_id=None):
+        """Retrieve, update (label/destination/active flag) or delete one link."""
+        from apps.tracking.models import CampaignTrackingLink
+        from apps.tracking.serializers import CampaignTrackingLinkSerializer
+        campaign = self.get_object()
+        link = CampaignTrackingLink.objects.filter(
+            pk=link_id, campaign=campaign,
+            link_type=CampaignTrackingLink.LinkType.SHAREABLE,
+        ).first()
+        if not link:
+            return Response(
+                {'error': 'Tracking link not found for this campaign.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if request.method == 'DELETE':
+            link.delete()
+            return Response(
+                {'status': 'deleted', 'message': 'Tracking link deleted.'},
+                status=status.HTTP_200_OK,
+            )
+
+        partial = request.method == 'PATCH'
+        serializer = CampaignTrackingLinkSerializer(
+            link, data=request.data, partial=partial,
+            context={'campaign': campaign}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(CampaignTrackingLinkSerializer(link).data)
+
+    @action(
+        detail=True, methods=['post'],
+        url_path=r'tracking-links/(?P<link_id>[^/.]+)/regenerate',
+    )
+    def tracking_link_regenerate(self, request, pk=None, link_id=None):
+        """Issues a fresh token/URL for a link (invalidates the old URL)."""
+        from apps.tracking.models import CampaignTrackingLink
+        from apps.tracking.serializers import CampaignTrackingLinkSerializer
+        from apps.tracking.utils import (
+            generate_unique_tracking_token, build_campaign_short_url,
+        )
+        campaign = self.get_object()
+        link = CampaignTrackingLink.objects.filter(
+            pk=link_id, campaign=campaign,
+            link_type=CampaignTrackingLink.LinkType.SHAREABLE,
+        ).first()
+        if not link:
+            return Response(
+                {'error': 'Tracking link not found for this campaign.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        token = generate_unique_tracking_token(CampaignTrackingLink, length=8)
+        link.tracking_token = token
+        link.short_url = build_campaign_short_url(token)
+        link.save(update_fields=['tracking_token', 'short_url', 'updated_at'])
+        return Response(CampaignTrackingLinkSerializer(link).data)
+
     @action(detail=True, methods=['get'])
     def validate_vars(self, request, pk=None):
         campaign = self.get_object()
@@ -502,6 +657,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
             text_content=orig.text_content,
             track_opens=orig.track_opens,
             track_clicks=orig.track_clicks,
+            destination_url=orig.destination_url,
             created_by=request.user if request.user.is_authenticated else orig.created_by,
         )
         new_campaign.groups.set(orig.groups.all())
@@ -567,6 +723,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 text_content=orig.text_content,
                 track_opens=orig.track_opens,
                 track_clicks=orig.track_clicks,
+                destination_url=orig.destination_url,
                 created_by=request.user if request.user.is_authenticated else orig.created_by,
             )
             new_c.groups.set(orig.groups.all())

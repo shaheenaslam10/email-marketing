@@ -7,10 +7,41 @@ from apps.contacts.models import Contact
 from apps.reminders.models import ReminderConfiguration, ReminderCycle
 from apps.tracking.models import EmailEvent, TrackingToken
 from apps.email_providers.providers import get_email_provider
-from apps.campaigns.services import render_content_variables, wrap_tracking
+from apps.campaigns.services import render_content_variables, wrap_tracking, expand_tracking_placeholders
 from apps.odk.services import run_odk_sync, sync_dataset_entities
 
 logger = logging.getLogger(__name__)
+
+
+def reminder_eligibility(contact: Contact, campaign: Campaign = None) -> dict:
+    """Canonical read-only reminder-eligibility verdict for reporting.
+
+    Mirrors the send-time gates in process_single_campaign_message and
+    execute_reminder_cycle WITHOUT sending anything, so report UIs can
+    show WHY a recipient will / will not receive reminders. Returns
+    {'eligible': bool, 'reason': str}.
+    """
+    if contact.status != Contact.UsageStatus.UNUSED:
+        return {'eligible': False, 'reason': 'Survey completed'}
+    if contact.unsubscribed:
+        return {'eligible': False, 'reason': 'Unsubscribed'}
+    if contact.email_status != Contact.EmailStatus.ACTIVE:
+        return {
+            'eligible': False,
+            'reason': 'Email %s' % contact.email_status.lower(),
+        }
+    if campaign is not None:
+        if campaign.status == Campaign.Status.PAUSED:
+            return {'eligible': False, 'reason': 'Campaign paused'}
+        if campaign.status not in (Campaign.Status.ACTIVE, Campaign.Status.SCHEDULED):
+            return {
+                'eligible': False,
+                'reason': 'Campaign %s' % campaign.status.lower(),
+            }
+        rem_cfg = getattr(campaign, 'reminder_config', None)
+        if rem_cfg is not None and not rem_cfg.enabled:
+            return {'eligible': False, 'reason': 'Reminders disabled'}
+    return {'eligible': True, 'reason': 'Survey not completed'}
 
 
 def process_single_campaign_message(message_id: int) -> bool:
@@ -100,7 +131,8 @@ def process_single_campaign_message(message_id: int) -> bool:
 
     # Render personalization variables (Section 14 & 35)
     rendered_subject = render_content_variables(subject_tmpl, contact)
-    rendered_html = render_content_variables(html_tmpl, contact)
+    rendered_html = render_content_variables(
+        expand_tracking_placeholders(html_tmpl, campaign, contact), contact)
     rendered_text = render_content_variables(text_tmpl, contact) if text_tmpl else ""
 
     # Wrap tracking pixel and click redirects (Section 75 & 76, Requirement 2 & 10)
@@ -123,7 +155,12 @@ def process_single_campaign_message(message_id: int) -> bool:
         subject=rendered_subject,
         html_content=final_html,
         text_content=rendered_text,
-        reply_to=sender.reply_to
+        reply_to=sender.reply_to,
+        log_context={
+            'campaign_id': campaign.id,
+            'message_id': message.id,
+            'message_type': message.message_type,
+        },
     )
 
     now = timezone.now()
@@ -270,6 +307,15 @@ def execute_reminder_cycle(campaign: Campaign, manual_trigger: bool = False, cus
 
         if created:
             # Dispatch message immediately if within batch limit
+            if idx < b_limit:
+                success = process_single_campaign_message(msg.id)
+                if success:
+                    sent_count += 1
+                    delivered_count += 1
+        elif msg.status in [CampaignMessage.Status.QUEUED, CampaignMessage.Status.FAILED]:
+            # Retry rows orphaned by an earlier interrupted run. Idempotent:
+            # already-sent rows are untouched and the send-time safety
+            # checks (USED / unsubscribed / paused / bounce) still apply.
             if idx < b_limit:
                 success = process_single_campaign_message(msg.id)
                 if success:

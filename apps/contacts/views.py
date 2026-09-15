@@ -90,7 +90,7 @@ class ContactViewSet(viewsets.ModelViewSet):
 
         # 1. Campaign & Reminder email dispatches
         for msg in contact.campaign_messages.select_related('campaign').all():
-            event_time = msg.sent_at or msg.delivered_at or msg.created_at
+            event_time = msg.sent_at or msg.delivered_at or msg.queued_at
             if msg.message_type == 'REMINDER':
                 title = f"Reminder email sent (Cycle #{msg.reminder_sequence})"
                 evt_type = 'REMINDER_SENT'
@@ -119,8 +119,20 @@ class ContactViewSet(viewsets.ModelViewSet):
                     'icon': 'mail-open'
                 })
 
+            if msg.status == 'SKIPPED':
+                reason = msg.skip_reason or msg.error_message or 'skipped'
+                events.append({
+                    'timestamp': event_time.isoformat() if event_time else None,
+                    'time_val': event_time,
+                    'type': 'REMINDER_SUPPRESSED',
+                    'title': 'Reminder suppressed' if msg.message_type == 'REMINDER' else 'Email skipped',
+                    'description': f"Campaign: {msg.campaign.name} &bull; Reason: {reason}",
+                    'badge': 'slate',
+                    'icon': 'bell-off'
+                })
+
         # 2. Link Click Events
-        from apps.tracking.models import LinkClickEvent
+        from apps.tracking.models import LinkClickEvent, CampaignLinkClickEvent
         for ce in LinkClickEvent.objects.filter(contact=contact).select_related('recipient_link__shortened_link', 'campaign'):
             sl = ce.recipient_link.shortened_link
             link_name = sl.link_name or 'Tracked Link'
@@ -131,6 +143,22 @@ class ContactViewSet(viewsets.ModelViewSet):
                 'type': 'LINK_CLICK',
                 'title': f"{link_name} clicked{bot_str}",
                 'description': f"Destination: {sl.original_url} &bull; Device: {ce.device_type or 'Unknown'} &bull; Browser: {ce.browser or 'Unknown'}",
+                'badge': 'emerald' if ce.click_type == 'HUMAN' else 'amber',
+                'icon': 'external-link'
+            })
+
+        # Recipient /c/ link visits (same shape as legacy link clicks).
+        for ce in CampaignLinkClickEvent.objects.filter(contact=contact).select_related('link__shortened_link', 'campaign'):
+            sl = ce.link.shortened_link
+            link_name = (sl.link_name if sl else None) or ce.link.name or 'Tracked Link'
+            dest = sl.original_url if sl else (ce.link.destination_url or '')
+            bot_str = " (Suspected Bot)" if ce.click_type == 'SUSPECTED_BOT' else ""
+            events.append({
+                'timestamp': ce.clicked_at.isoformat(),
+                'time_val': ce.clicked_at,
+                'type': 'LINK_CLICK',
+                'title': f"{link_name} clicked{bot_str}",
+                'description': f"Destination: {dest} &bull; Device: {ce.device_type or 'Unknown'} &bull; Browser: {ce.browser or 'Unknown'}",
                 'badge': 'emerald' if ce.click_type == 'HUMAN' else 'amber',
                 'icon': 'external-link'
             })

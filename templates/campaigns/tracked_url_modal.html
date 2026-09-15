@@ -11,7 +11,7 @@
                 </div>
                 <div>
                     <h3 class="text-base font-extrabold leading-tight">Insert Tracked Branded URL</h3>
-                    <p class="text-xs text-blue-100 font-medium">Recipient-level tracked short URL (ODK & Web links)</p>
+                    <p class="text-xs text-blue-100 font-medium">First-party IRIS tracked short URL (ODK & Web links)</p>
                 </div>
             </div>
             <button type="button" onclick="closeTrackedUrlModal()" class="text-white/80 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors">
@@ -55,10 +55,10 @@
             <div class="grid grid-cols-2 gap-3 pt-1">
                 <div class="p-3 bg-slate-50 border border-slate-200/90 rounded-xl space-y-1.5">
                     <label class="font-bold text-slate-800 flex items-center justify-between cursor-pointer">
-                        <span>Enable Tracking</span>
+                        <span>Track with IRIS</span>
                         <input type="checkbox" id="tu-enable-tracking" checked onchange="onTrackedUrlInputChange()" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500">
                     </label>
-                    <p class="text-[10px] text-slate-500">Generates recipient-specific unique token</p>
+                    <p class="text-[10px] text-slate-500">First-party /c/ link per recipient; delivered as plain-text URL</p>
                 </div>
 
                 <div class="p-3 bg-slate-50 border border-slate-200/90 rounded-xl space-y-1.5">
@@ -66,7 +66,7 @@
                         <span>Open in New Tab</span>
                         <input type="checkbox" id="tu-open-new-tab" checked class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500">
                     </label>
-                    <p class="text-[10px] text-slate-500">Opens link with target="_blank"</p>
+                    <p class="text-[10px] text-slate-500" id="tu-newtab-note">Plain-text links open per the mail app</p>
                 </div>
             </div>
 
@@ -80,10 +80,10 @@
                     <span class="px-2 py-0.5 bg-blue-100 text-blue-800 font-bold rounded-md text-[10px]" id="tu-preview-badge">Branded Domain</span>
                 </div>
                 <div class="p-2.5 bg-white border border-slate-200 rounded-xl font-mono text-xs text-blue-600 font-bold break-all shadow-2xs" id="tu-preview-box">
-                    https://marketing.iriscommunications.cloud/{unique_link}
+                    {{ shortener_base_url }}/c/{unique_link}
                 </div>
                 <p class="text-[10px] text-slate-500 leading-normal" id="tu-preview-note">
-                    * The actual recipient-specific URL (e.g. <code>https://marketing.iriscommunications.cloud/A7K29X</code>) will be generated automatically for every individual contact when the campaign is dispatched.
+                    * The actual recipient-specific URL (e.g. <code>{{ shortener_base_url }}/c/A7K29XQ2</code>) will be generated automatically for every individual contact when the campaign is dispatched.
                 </p>
             </div>
         </div>
@@ -102,6 +102,58 @@
 </div>
 
 <script>
+    // Branded shortener base URL (server config; falls back to production).
+    window.SHORTENER_BASE_URL = window.SHORTENER_BASE_URL || "{{ shortener_base_url }}";
+    function trackedPlaceholderUrl() {
+        return window.SHORTENER_BASE_URL.replace(/\/+$/, '') + '/c/{unique_link}';
+    }
+    function trackedExampleUrl() {
+        return window.SHORTENER_BASE_URL.replace(/\/+$/, '') + '/c/A7K29XQ2';
+    }
+    // Custom Link blot: stock Quill 1.3.6 Link keeps ONLY href when pasting
+    // HTML, which silently stripped data-original-url / data-link-name /
+    // data-track from tracked links and broke {unique_link} substitution at
+    // dispatch. This replacement preserves those attributes through every
+    // paste -> save -> reload round-trip. Plain links (no data-*) keep the
+    // exact stock string behavior. Registered once per page for all editors.
+    (function registerTrackedLinkBlot() {
+        if (window.__trackedLinkBlotRegistered || typeof Quill === 'undefined') return;
+        try {
+            const BaseLink = Quill.import('formats/link');
+            const TRACKED_ATTRS = ['data-original-url', 'data-link-name', 'data-track'];
+            class TrackedLink extends BaseLink {
+                static create(value) {
+                    const href = (value && typeof value === 'object') ? (value.href || '') : value;
+                    const node = super.create(href);
+                    if (value && typeof value === 'object') {
+                        TRACKED_ATTRS.forEach(attr => {
+                            if (value[attr]) node.setAttribute(attr, value[attr]);
+                        });
+                    }
+                    return node;
+                }
+                static formats(domNode) {
+                    const href = domNode.getAttribute('href') || '';
+                    const extra = {};
+                    let hasExtra = false;
+                    TRACKED_ATTRS.forEach(attr => {
+                        if (domNode.hasAttribute(attr)) {
+                            extra[attr] = domNode.getAttribute(attr);
+                            hasExtra = true;
+                        }
+                    });
+                    if (!hasExtra) return href;
+                    extra.href = href;
+                    return extra;
+                }
+            }
+            Quill.register(TrackedLink, true);
+            window.__trackedLinkBlotRegistered = true;
+        } catch (e) {
+            console.warn('TrackedLink blot registration notice:', e);
+        }
+    })();
+
     let activeTrackedUrlContext = 'wizard';
     let savedQuillSelection = null;
 
@@ -156,6 +208,21 @@
         const isTracking = enableTrack ? enableTrack.checked : true;
         const origVal = (origInput ? origInput.value.trim() : '');
 
+        // Plain-text tracked links have no anchor element, so "open in new
+        // tab" does not apply while IRIS tracking is on.
+        const tabInput = document.getElementById('tu-open-new-tab');
+        const tabNote = document.getElementById('tu-newtab-note');
+        if (tabInput) {
+            tabInput.disabled = isTracking;
+            tabInput.checked = !isTracking;
+            tabInput.classList.toggle('opacity-40', isTracking);
+        }
+        if (tabNote) {
+            tabNote.textContent = isTracking
+                ? 'Plain-text links open per the mail app'
+                : 'Opens link with target="_blank"';
+        }
+
         if (!isTracking) {
             previewBox.textContent = origVal || 'https://example.com/direct-link';
             previewBox.className = 'p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-700 font-bold break-all shadow-2xs';
@@ -167,14 +234,14 @@
                 previewNote.textContent = '* Tracking is disabled. Recipients will be sent directly to this URL without click tracking.';
             }
         } else {
-            previewBox.textContent = 'https://marketing.iriscommunications.cloud/{unique_link}';
+            previewBox.textContent = trackedPlaceholderUrl();
             previewBox.className = 'p-2.5 bg-white border border-blue-200 rounded-xl font-mono text-xs text-blue-600 font-bold break-all shadow-2xs';
             if (previewBadge) {
                 previewBadge.textContent = 'Branded Domain';
                 previewBadge.className = 'px-2 py-0.5 bg-blue-100 text-blue-800 font-bold rounded-md text-[10px]';
             }
             if (previewNote) {
-                previewNote.innerHTML = '* The actual recipient-specific URL (e.g. <code>https://marketing.iriscommunications.cloud/A7K29X</code>) will be generated automatically for every individual contact when the campaign is dispatched.';
+                previewNote.innerHTML = '* The actual recipient-specific URL (e.g. <code>' + trackedExampleUrl() + '</code>) will be generated automatically for every individual contact when the campaign is dispatched. It is delivered as a plain-text URL (no button or link styling) so email providers cannot rewrite it; mail apps auto-link it for recipients.';
             }
         }
     }
@@ -223,7 +290,7 @@
         let linkHtml = '';
         if (enableTracking) {
             const targetAttr = openInNewTab ? 'target="_blank" rel="noopener noreferrer"' : '';
-            linkHtml = `<a href="https://marketing.iriscommunications.cloud/{unique_link}" data-original-url="${esc(originalUrl)}" data-link-name="${esc(linkName || displayText)}" data-track="true" ${targetAttr}>${esc(displayText)}</a>`;
+            linkHtml = `<a href="${trackedPlaceholderUrl()}" data-original-url="${esc(originalUrl)}" data-link-name="${esc(linkName || displayText)}" data-track="true" ${targetAttr}>${esc(displayText)}</a>`;
         } else {
             const targetAttr = openInNewTab ? 'target="_blank" rel="noopener noreferrer"' : '';
             linkHtml = `<a href="${esc(originalUrl)}" data-track="false" ${targetAttr}>${esc(displayText)}</a>`;

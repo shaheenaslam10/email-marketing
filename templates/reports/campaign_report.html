@@ -412,16 +412,19 @@
                             <th class="py-3 px-4">Contact</th>
                             <th class="py-3 px-4">JobID</th>
                             <th class="py-3 px-4 text-center">Survey Status</th>
+                            <th class="py-3 px-4 text-center">Email</th>
                             <th class="py-3 px-4 text-center">Link Status</th>
                             <th class="py-3 px-4">First Click</th>
                             <th class="py-3 px-4">Last Click</th>
                             <th class="py-3 px-4 text-center">Total Clicks</th>
                             <th class="py-3 px-4 text-center">Click Type</th>
+                            <th class="py-3 px-4">Completed</th>
+                            <th class="py-3 px-4 text-center">Reminder</th>
                             <th class="py-3 px-4">Link Details</th>
                         </tr>
                     </thead>
                     <tbody id="lt-recipients-tbody" class="divide-y divide-slate-100">
-                        <tr><td colspan="9" class="py-12 text-center text-slate-400">Loading recipient activity...</td></tr>
+                        <tr><td colspan="12" class="py-12 text-center text-slate-400">Loading recipient activity...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -440,6 +443,158 @@
                         Next &rarr;
                     </button>
                 </div>
+            </div>
+        </div>
+        <!-- Recipient Click Activity (per-click events for email links) -->
+        <div class="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+            <div class="p-6 border-b border-slate-100 flex items-center justify-between flex-wrap gap-4">
+                <div>
+                    <h3 class="text-base font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+                        Recipient Click Activity
+                        <span class="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-extrabold rounded-full uppercase tracking-wide">Recipient</span>
+                    </h3>
+                    <p class="text-xs text-slate-500 mt-0.5">Every recorded click on this campaign's recipient email links, newest first. Anonymous shareable-link visits appear in the Shareable Link Activity section below.</p>
+                </div>
+                <span class="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-xl" id="rc-clicks-count">0 Clicks</span>
+            </div>
+
+            <div class="px-6 pt-6">
+                <div class="flex items-center justify-between flex-wrap gap-3 mb-3">
+                    <h4 class="text-sm font-bold text-slate-900">Recent Clicks</h4>
+                    <div class="flex items-center gap-2 text-xs">
+                        <select id="rc-filter-link" onchange="loadRecipientClickActivity()" class="px-3 py-1.5 bg-white border border-slate-300 rounded-xl font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 max-w-xs">
+                            <option value="">All tracked links</option>
+                        </select>
+                        <select id="rc-limit" onchange="loadRecipientClickActivity()" class="px-2.5 py-1.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="25">25</option>
+                            <option value="50" selected>50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="overflow-x-auto border border-slate-200/80 rounded-2xl max-h-96 overflow-y-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead class="bg-slate-100/90 sticky top-0 border-b border-slate-200 z-10">
+                            <tr class="text-[11px] font-bold text-slate-600 uppercase">
+                                <th class="py-3 px-4">Time</th>
+                                <th class="py-3 px-4">Recipient</th>
+                                <th class="py-3 px-4">Link</th>
+                                <th class="py-3 px-4">Tracking URL</th>
+                                <th class="py-3 px-4">Destination</th>
+                                <th class="py-3 px-4 text-center">Type</th>
+                                <th class="py-3 px-4">Browser</th>
+                                <th class="py-3 px-4">OS</th>
+                                <th class="py-3 px-4">Device</th>
+                                <th class="py-3 px-4">Referrer</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rc-events-tbody" class="divide-y divide-slate-100">
+                            <tr><td colspan="10" class="py-8 text-center text-slate-400">Loading recent clicks...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-3 mb-6 leading-relaxed">
+                    Clicks are recorded by our own tracking endpoint when recipients follow their unique short URLs. Visitor IP addresses are recorded for abuse analysis but are not displayed here (staff can access them via Django admin).
+                </p>
+            </div>
+        </div>
+
+        <!-- Shareable / Anonymous Link Activity (Step 1 campaign links, /c/<token>/) -->
+        <div class="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+            <div class="p-6 border-b border-slate-100 flex items-center justify-between flex-wrap gap-4">
+                <div>
+                    <h3 class="text-base font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+                        Shareable Link Activity
+                        <span class="px-2.5 py-0.5 bg-teal-50 text-teal-700 border border-teal-200 text-[10px] font-extrabold rounded-full uppercase tracking-wide">Shareable / Anonymous</span>
+                    </h3>
+                    <p class="text-xs text-slate-500 mt-0.5">Visits to this campaign's shareable tracking links (Step 1) from ads, social media, QR codes and partner sites. These visits are <strong>not</strong> tied to email contacts — for per-recipient email link tracking see the tables above.</p>
+                </div>
+                <span class="px-3 py-1 bg-teal-50 text-teal-700 text-xs font-bold rounded-xl" id="sh-links-count">0 Shareable Links</span>
+            </div>
+
+            <!-- Shareable KPI chips -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 p-6 pb-2">
+                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200/80">
+                    <span class="text-[11px] font-bold text-slate-400 uppercase">Total Clicks</span>
+                    <div class="text-2xl font-extrabold text-slate-900 mt-1" id="sh-kpi-total">0</div>
+                </div>
+                <div class="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-100">
+                    <span class="text-[11px] font-bold text-emerald-600 uppercase">Human Clicks</span>
+                    <div class="text-2xl font-extrabold text-emerald-700 mt-1" id="sh-kpi-human">0</div>
+                </div>
+                <div class="p-4 bg-amber-50/60 rounded-2xl border border-amber-100">
+                    <span class="text-[11px] font-bold text-amber-600 uppercase">Suspected Bots</span>
+                    <div class="text-2xl font-extrabold text-amber-700 mt-1" id="sh-kpi-bot">0</div>
+                </div>
+                <div class="p-4 bg-teal-50/60 rounded-2xl border border-teal-100">
+                    <span class="text-[11px] font-bold text-teal-600 uppercase">Active Links</span>
+                    <div class="text-2xl font-extrabold text-teal-700 mt-1" id="sh-kpi-active">0</div>
+                </div>
+            </div>
+
+            <!-- Shareable links table -->
+            <div class="p-6">
+                <h4 class="text-sm font-bold text-slate-900 mb-3">Tracking Links</h4>
+                <div class="overflow-x-auto border border-slate-200/80 rounded-2xl">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-slate-50/75 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase">
+                                <th class="py-3 px-4">Link</th>
+                                <th class="py-3 px-4">Short URL</th>
+                                <th class="py-3 px-4">Destination URL</th>
+                                <th class="py-3 px-4 text-center">Status</th>
+                                <th class="py-3 px-4 text-center">Clicks</th>
+                                <th class="py-3 px-4 text-center">Human</th>
+                                <th class="py-3 px-4 text-center">Bots</th>
+                                <th class="py-3 px-4">Last Click</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sh-links-tbody" class="divide-y divide-slate-100">
+                            <tr><td colspan="8" class="py-8 text-center text-slate-400">Loading shareable links...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Recent anonymous activity -->
+            <div class="px-6 pb-6">
+                <div class="flex items-center justify-between flex-wrap gap-3 mb-3">
+                    <h4 class="text-sm font-bold text-slate-900">Recent Activity</h4>
+                    <div class="flex items-center gap-2 text-xs">
+                        <select id="sh-filter-link" onchange="loadShareableReport()" class="px-3 py-1.5 bg-white border border-slate-300 rounded-xl font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500 max-w-xs">
+                            <option value="">All shareable links</option>
+                        </select>
+                        <select id="sh-limit" onchange="loadShareableReport()" class="px-2.5 py-1.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500">
+                            <option value="25">25</option>
+                            <option value="50" selected>50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="overflow-x-auto border border-slate-200/80 rounded-2xl max-h-96 overflow-y-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead class="bg-slate-100/90 sticky top-0 border-b border-slate-200 z-10">
+                            <tr class="text-[11px] font-bold text-slate-600 uppercase">
+                                <th class="py-3 px-4">Time</th>
+                                <th class="py-3 px-4">Link</th>
+                                <th class="py-3 px-4 text-center">Type</th>
+                                <th class="py-3 px-4">Browser</th>
+                                <th class="py-3 px-4">OS</th>
+                                <th class="py-3 px-4">Device</th>
+                                <th class="py-3 px-4">Referrer</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sh-events-tbody" class="divide-y divide-slate-100">
+                            <tr><td colspan="7" class="py-8 text-center text-slate-400">Loading recent activity...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-3 leading-relaxed">
+                    Visitor IP addresses are recorded for abuse analysis but are not displayed here (staff can access them via Django admin).
+                    Unique-visitor counts are intentionally unavailable for anonymous links: no cookies or fingerprints are collected.
+                </p>
             </div>
         </div>
     </div>
@@ -558,6 +713,8 @@
 
         if (tabName === 'link_clicks') {
             loadRecipientReport(1);
+            loadRecipientClickActivity();
+            loadShareableReport();
         } else if (tabName === 'recipients') {
             loadAllRecipients();
         }
@@ -741,7 +898,7 @@
         const pageSize = document.getElementById('lt-page-size').value;
 
         const tbody = document.getElementById('lt-recipients-tbody');
-        tbody.innerHTML = '<tr><td colspan="9" class="py-8 text-center text-slate-400">Loading recipient activity...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="py-8 text-center text-slate-400">Loading recipient activity...</td></tr>';
 
         const params = new URLSearchParams({
             page: page,
@@ -774,7 +931,7 @@
             document.getElementById('lt-pg-next').disabled = (page >= totalPages);
 
             if (recipients.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" class="py-10 text-center text-slate-400 font-medium">No recipient activity matched criteria.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="12" class="py-10 text-center text-slate-400 font-medium">No recipient activity matched criteria.</td></tr>';
                 return;
             }
 
@@ -786,6 +943,27 @@
                 const linkBadge = r.link_status === 'Clicked'
                     ? `<span class="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-bold text-[10px]">Clicked</span>`
                     : `<span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium text-[10px]">Not Clicked</span>`;
+
+                const sentMark = r.email_sent_at && r.email_sent_at !== '-'
+                    ? `<span class="text-emerald-600 font-bold" title="Sent: ${escapeHtml(r.email_sent_at)}">Sent &#10003;</span>`
+                    : `<span class="text-slate-300">Sent &mdash;</span>`;
+                const openedMark = r.email_opened_at && r.email_opened_at !== '-'
+                    ? `<span class="text-purple-600 font-bold" title="Opened: ${escapeHtml(r.email_opened_at)}">Opened &#10003;</span>`
+                    : `<span class="text-slate-300">Opened &mdash;</span>`;
+                const emailLifecycle = `${sentMark}<br>${openedMark}`;
+
+                const completedLifecycle = r.completed_at && r.completed_at !== '-'
+                    ? `<span class="text-emerald-700 font-bold" title="ODK submission: ${escapeHtml(r.odk_submission_id || '')}">${escapeHtml(r.completed_at)}</span>`
+                    : `<span class="text-slate-300">&mdash;</span>`;
+
+                const reminderBadge = r.reminder_eligible
+                    ? `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]" title="${escapeHtml(r.reminder_reason || '')}">Eligible</span>`
+                    : `<span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold text-[10px]" title="${escapeHtml(r.reminder_reason || '')}">No</span>`;
+
+                const linkTitle = ['Destination: ' + (r.original_url || '-')]
+                    .concat(r.short_url ? ['Tracking URL: ' + r.short_url] : [])
+                    .concat(r.tracking_token ? ['token: ' + r.tracking_token] : [])
+                    .join(' | ');
 
                 let clickTypeBadge = '<span class="text-slate-300">-</span>';
                 if (r.click_type === 'Human') {
@@ -801,29 +979,212 @@
                         <td class="py-3 px-4">
                             <div class="font-bold text-slate-900">${escapeHtml(r.name)}</div>
                             <div class="text-[11px] text-slate-500">${escapeHtml(r.email)}</div>
+                            <div class="font-mono text-[11px] text-slate-400">${escapeHtml(r.phone || '-')}</div>
                         </td>
                         <td class="py-3 px-4 font-mono font-semibold text-slate-700 text-xs">${escapeHtml(r.job_id)}</td>
                         <td class="py-3 px-4 text-center">${surveyBadge}</td>
+                        <td class="py-3 px-4 text-center whitespace-nowrap">${emailLifecycle}</td>
                         <td class="py-3 px-4 text-center">${linkBadge}</td>
                         <td class="py-3 px-4 text-slate-600 whitespace-nowrap">${r.first_click}</td>
                         <td class="py-3 px-4 text-slate-600 whitespace-nowrap">${r.last_click}</td>
                         <td class="py-3 px-4 text-center font-bold ${r.total_clicks > 0 ? 'text-indigo-600' : 'text-slate-400'}">${r.total_clicks}</td>
                         <td class="py-3 px-4 text-center">${clickTypeBadge}</td>
-                        <td class="py-3 px-4 text-[11px] max-w-xs truncate text-slate-600" title="${escapeHtml(r.original_url)}">
+                        <td class="py-3 px-4 text-slate-600 whitespace-nowrap">${completedLifecycle}</td>
+                        <td class="py-3 px-4 text-center">${reminderBadge}</td>
+                        <td class="py-3 px-4 text-[11px] max-w-xs truncate text-slate-600" title="${escapeHtml(linkTitle)}">
                             <span class="font-bold text-slate-800">${escapeHtml(r.link_name)}</span>
                             ${r.short_url ? `<br><span class="font-mono text-[10px] text-blue-600">${escapeHtml(r.short_url)}</span>` : ''}
+                            ${r.tracking_token ? `<br><span class="font-mono text-[10px] text-slate-400">token: ${escapeHtml(r.tracking_token)}</span>` : ''}
                         </td>
                     </tr>
                 `;
             }).join('');
         } catch (err) {
             console.error(err);
-            tbody.innerHTML = '<tr><td colspan="9" class="py-8 text-center text-rose-500">Failed to load recipient report.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="12" class="py-8 text-center text-rose-500">Failed to load recipient report.</td></tr>';
         }
     }
 
     function changeRecipientPage(delta) {
         loadRecipientReport(currentLtPage + delta);
+    }
+
+    // --- Shareable / Anonymous Link Activity (Step 1, /c/<token>/) ---
+
+    function copyShareableUrl(url) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(url).then(
+                () => showToast('Shareable URL copied to clipboard!'),
+                () => showToast('Copy failed — select the URL manually.', 'error')
+            );
+        } else {
+            showToast('Copy is not supported in this browser.', 'error');
+        }
+    }
+
+    async function loadRecipientClickActivity() {
+        const eventsTbody = document.getElementById('rc-events-tbody');
+        const filterSelect = document.getElementById('rc-filter-link');
+        const limitSelect = document.getElementById('rc-limit');
+        if (!eventsTbody) return;
+
+        const linkId = filterSelect ? filterSelect.value : '';
+        const limit = limitSelect ? limitSelect.value : '50';
+        const params = new URLSearchParams({ limit: limit });
+        if (linkId) params.set('link_id', linkId);
+
+        try {
+            const res = await fetch(`/api/campaigns/${campaignId}/report/link-clicks/?${params.toString()}`);
+            if (!res.ok) throw new Error('recipient click activity failed');
+            const data = await res.json();
+
+            const total = data.total_events || 0;
+            document.getElementById('rc-clicks-count').textContent = `${total.toLocaleString()} Click${total === 1 ? '' : 's'}`;
+
+            const links = data.links || [];
+            if (filterSelect) {
+                const currentVal = filterSelect.value;
+                filterSelect.innerHTML = '<option value="">All tracked links</option>' + links.map(l =>
+                    `<option value="${l.id}">${escapeHtml(l.name)}</option>`
+                ).join('');
+                filterSelect.value = currentVal;
+            }
+
+            const events = data.events || [];
+            if (events.length === 0) {
+                eventsTbody.innerHTML = '<tr><td colspan="10" class="py-8 text-center text-slate-400">No clicks recorded yet.</td></tr>';
+            } else {
+                eventsTbody.innerHTML = events.map(e => {
+                    let typeBadge = '<span class="text-slate-300">-</span>';
+                    if (e.click_type === 'Human') {
+                        typeBadge = `<span class="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[10px] border border-emerald-200">Human</span>`;
+                    } else if (e.click_type === 'Suspected Bot') {
+                        typeBadge = `<span class="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold text-[10px] border border-amber-200">Suspected Bot</span>`;
+                    } else if (e.click_type === 'Unknown') {
+                        typeBadge = `<span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px]">Unknown</span>`;
+                    }
+                    return `
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="py-3 px-4 text-slate-600 whitespace-nowrap">${formatDateTime(e.clicked_at)}</td>
+                            <td class="py-3 px-4">
+                                <div class="font-bold text-slate-900">${escapeHtml(e.contact_name)}</div>
+                                <div class="font-mono text-[11px] text-slate-500">${escapeHtml(e.contact_email)}</div>
+                                <div class="font-mono text-[11px] text-slate-400">${escapeHtml(e.contact_phone || '-')}</div>
+                            </td>
+                            <td class="py-3 px-4 font-bold text-slate-800">${escapeHtml(e.link_name)}</td>
+                            <td class="py-3 px-4 font-mono text-[11px] text-indigo-600 max-w-[220px] truncate" title="${escapeHtml((e.short_url || '-') + (e.tracking_token ? ' (token: ' + e.tracking_token + ')' : ''))}">${escapeHtml(e.short_url || '-')}</td>
+                            <td class="py-3 px-4 font-mono text-[11px] text-slate-500 max-w-xs truncate" title="${escapeHtml(e.destination_url || '')}">${e.destination_url ? escapeHtml(e.destination_url) : '<span class="text-slate-300">-</span>'}</td>
+                            <td class="py-3 px-4 text-center">${typeBadge}</td>
+                            <td class="py-3 px-4 text-slate-600">${escapeHtml(e.browser)}</td>
+                            <td class="py-3 px-4 text-slate-600">${escapeHtml(e.operating_system)}</td>
+                            <td class="py-3 px-4 text-slate-600">${escapeHtml(e.device_type)}</td>
+                            <td class="py-3 px-4 font-mono text-[11px] text-slate-500 max-w-xs truncate" title="${escapeHtml(e.referrer || '')}">${e.referrer ? escapeHtml(e.referrer) : '<span class="text-slate-300">-</span>'}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            if (window.lucide) lucide.createIcons();
+        } catch (err) {
+            eventsTbody.innerHTML = '<tr><td colspan="10" class="py-8 text-center text-rose-400">Could not load click activity.</td></tr>';
+        }
+    }
+
+    async function loadShareableReport() {
+        const linksTbody = document.getElementById('sh-links-tbody');
+        const eventsTbody = document.getElementById('sh-events-tbody');
+        const filterSelect = document.getElementById('sh-filter-link');
+        const limitSelect = document.getElementById('sh-limit');
+        if (!linksTbody || !eventsTbody) return;
+
+        const linkId = filterSelect ? filterSelect.value : '';
+        const limit = limitSelect ? limitSelect.value : '50';
+        const params = new URLSearchParams({ limit: limit });
+        if (linkId) params.set('link_id', linkId);
+
+        try {
+            const res = await fetch(`/api/campaigns/${campaignId}/report/shareable-links/?${params.toString()}`);
+            if (!res.ok) throw new Error('shareable report failed');
+            const data = await res.json();
+
+            const totals = data.totals || {};
+            document.getElementById('sh-kpi-total').textContent = (totals.total_clicks || 0).toLocaleString();
+            document.getElementById('sh-kpi-human').textContent = (totals.human_clicks || 0).toLocaleString();
+            document.getElementById('sh-kpi-bot').textContent = (totals.bot_clicks || 0).toLocaleString();
+            document.getElementById('sh-kpi-active').textContent = (totals.active_links || 0).toLocaleString();
+
+            const links = data.links || [];
+            document.getElementById('sh-links-count').textContent = `${links.length} Shareable Link${links.length === 1 ? '' : 's'}`;
+
+            if (filterSelect) {
+                const currentVal = filterSelect.value;
+                filterSelect.innerHTML = '<option value="">All shareable links</option>' + links.map(l =>
+                    `<option value="${l.id}">${escapeHtml(l.name)}</option>`
+                ).join('');
+                filterSelect.value = currentVal;
+            }
+
+            if (links.length === 0) {
+                linksTbody.innerHTML = `<tr><td colspan="8" class="py-8 text-center text-slate-400">No shareable links yet. Generate one in <a href="/campaigns/${campaignId}/edit/?mode=draft" class="text-teal-600 font-bold underline">Step 1 of the campaign editor</a>.</td></tr>`;
+            } else {
+                linksTbody.innerHTML = links.map(l => {
+                    const statusBadge = l.is_active
+                        ? `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-extrabold text-[10px] uppercase">Active</span>`
+                        : `<span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium text-[10px] uppercase">Disabled</span>`;
+                    const destLabel = l.destination_url
+                        ? `${escapeHtml(l.destination_url.length > 52 ? l.destination_url.slice(0, 52) + '…' : l.destination_url)}${l.uses_campaign_default ? ' <span class="text-[10px] text-slate-400 font-semibold">(campaign default)</span>' : ''}`
+                        : '<span class="text-rose-500 font-semibold">Not configured</span>';
+                    return `
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="py-3 px-4 font-bold text-slate-900">${escapeHtml(l.name)}</td>
+                            <td class="py-3 px-4">
+                                <span class="font-mono text-[11px] text-teal-700 font-bold break-all">${escapeHtml(l.short_url)}</span>
+                                <button type="button" onclick="copyShareableUrl('${escapeHtml(l.short_url)}')" class="ml-1.5 px-2 py-0.5 bg-slate-100 hover:bg-teal-50 hover:text-teal-700 text-slate-600 rounded-md text-[10px] font-bold transition-colors">Copy</button>
+                            </td>
+                            <td class="py-3 px-4 font-mono text-[11px] text-slate-600 max-w-xs truncate" title="${escapeHtml(l.destination_url || '')}">${destLabel}</td>
+                            <td class="py-3 px-4 text-center">${statusBadge}</td>
+                            <td class="py-3 px-4 text-center font-bold ${l.click_count > 0 ? 'text-teal-700' : 'text-slate-400'}">${l.click_count.toLocaleString()}</td>
+                            <td class="py-3 px-4 text-center font-semibold text-emerald-700">${l.human_click_count.toLocaleString()}</td>
+                            <td class="py-3 px-4 text-center font-semibold text-amber-700">${l.bot_click_count.toLocaleString()}</td>
+                            <td class="py-3 px-4 text-slate-600 whitespace-nowrap">${l.last_clicked_at ? formatDateTime(l.last_clicked_at) : '-'}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            const events = data.recent_events || [];
+            if (events.length === 0) {
+                eventsTbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-slate-400">No visits recorded yet.</td></tr>';
+            } else {
+                eventsTbody.innerHTML = events.map(e => {
+                    let typeBadge = '<span class="text-slate-300">-</span>';
+                    if (e.click_type === 'Human') {
+                        typeBadge = `<span class="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[10px] border border-emerald-200">Human</span>`;
+                    } else if (e.click_type === 'Suspected Bot') {
+                        typeBadge = `<span class="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold text-[10px] border border-amber-200">Suspected Bot</span>`;
+                    } else if (e.click_type === 'Unknown') {
+                        typeBadge = `<span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px]">Unknown</span>`;
+                    }
+                    return `
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="py-3 px-4 text-slate-600 whitespace-nowrap">${formatDateTime(e.clicked_at)}</td>
+                            <td class="py-3 px-4 font-bold text-slate-800">${escapeHtml(e.link_name)}</td>
+                            <td class="py-3 px-4 text-center">${typeBadge}</td>
+                            <td class="py-3 px-4 text-slate-600">${escapeHtml(e.browser)}</td>
+                            <td class="py-3 px-4 text-slate-600">${escapeHtml(e.operating_system)}</td>
+                            <td class="py-3 px-4 text-slate-600">${escapeHtml(e.device_type)}</td>
+                            <td class="py-3 px-4 font-mono text-[11px] text-slate-500 max-w-xs truncate" title="${escapeHtml(e.referrer || '')}">${e.referrer ? escapeHtml(e.referrer) : '<span class="text-slate-300">-</span>'}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            if (window.lucide) lucide.createIcons();
+        } catch (err) {
+            console.error(err);
+            linksTbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-rose-500">Failed to load shareable links.</td></tr>';
+            eventsTbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-rose-500">Failed to load recent activity.</td></tr>';
+        }
     }
 
     function exportRecipientReport(format) {

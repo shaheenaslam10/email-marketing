@@ -3,13 +3,68 @@ import uuid
 import logging
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Optional, Dict, Tuple, List
+from typing import Optional, Dict, Tuple, List, Any
 import requests
 from django.conf import settings
 from .base import BaseEmailProvider, SendResult
 from apps.sandbox.models import SandboxEmail
 
 logger = logging.getLogger(__name__)
+
+
+def _mask_email(to_email):
+    """Masks the local part of an address for safe logging (a***@domain)."""
+    try:
+        local, domain = (to_email or '').rsplit('@', 1)
+        if not local or not domain:
+            return '***'
+        return local[0] + '***@' + domain
+    except Exception:
+        return '***'
+
+
+def _summarize_outbound_html(html_content):
+    """
+    Sanitized pre-send diagnostic: URL-class counts only.
+    Never includes content, tokens, keys, or personal information.
+    """
+    body = html_content or ''
+    lowered = body.lower()
+    short_base = (getattr(settings, 'SHORTENER_BASE_URL', '') or '').rstrip('/').lower()
+    return {
+        'html_bytes': len(body),
+        'branded_c_urls': lowered.count(short_base + '/c/') if short_base else 0,
+        'unresolved_placeholders': body.count('{unique_link}') + body.count('{unique-link}'),
+        'contains_provider_tracking_domain': any(
+            d in lowered for d in ('sendibt', 'sendinblue.com', 'click.brevo.com')
+        ),
+    }
+
+
+def _maybe_log_outbound(sender, provider, mode, to_email, html_content, log_context):
+    """
+    Emits one sanitized diagnostic line per top-level send and returns the
+    correlation dict for forwarding. Delegated providers (Brevo/SES ->
+    SMTP/Sandbox) reuse the same dict, so the marker below guarantees a
+    single line even when one provider delegates to another.
+    """
+    ctx = dict(log_context) if log_context else {}
+    if ctx.pop('_diag_done', False):
+        return ctx
+    logger.info(
+        "Outbound email via %s sender_id=%s mode=%s disable_provider_click_tracking=%s "
+        "campaign_id=%s message_id=%s to=%s summary=%s",
+        provider,
+        getattr(sender, 'id', None),
+        mode,
+        getattr(sender, 'disable_provider_click_tracking', False),
+        ctx.get('campaign_id'),
+        ctx.get('message_id'),
+        _mask_email(to_email),
+        _summarize_outbound_html(html_content),
+    )
+    ctx['_diag_done'] = True
+    return ctx
 
 
 class SandboxProvider(BaseEmailProvider):
@@ -24,7 +79,11 @@ class SandboxProvider(BaseEmailProvider):
         reply_to: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
+        log_context = _maybe_log_outbound(
+            self.sender, 'sandbox', 'sandbox', to_email, html_content, log_context,
+        )
         try:
             msg_id = f"sandbox-{uuid.uuid4()}"
             SandboxEmail.objects.create(
@@ -60,7 +119,11 @@ class SMTPProvider(BaseEmailProvider):
         reply_to: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
+        log_context = _maybe_log_outbound(
+            self.sender, 'smtp', 'smtp', to_email, html_content, log_context,
+        )
         try:
             msg = MIMEMultipart('alternative')
             msg['Subject'] = subject
@@ -146,15 +209,29 @@ class BrevoProvider(BaseEmailProvider):
         reply_to: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        if self._is_smtp_config():
+        smtp_mode = self._is_smtp_config()
+        log_context = _maybe_log_outbound(
+            self.sender, 'brevo', 'smtp-relay' if smtp_mode else 'api',
+            to_email, html_content, log_context,
+        )
+        if smtp_mode:
             if not self.sender.host:
                 self.sender.host = "smtp-relay.brevo.com"
             if not self.sender.port:
                 self.sender.port = 587
             self.sender.use_tls = True
-            return SMTPProvider(self.sender).send_email(to_email, subject, html_content, text_content, reply_to, headers, tags)
+            return SMTPProvider(self.sender).send_email(to_email, subject, html_content, text_content, reply_to, headers, tags, log_context)
 
+        # NOTE: Brevo offers no per-message, API, SMTP-header, or per-link
+        # opt-out from its transactional link rewriting. Whatever branded
+        # URLs we put in htmlContent are wrapped into sendibt*.com links by
+        # Brevo after receipt. Stopping that rewrite is only possible at the
+        # Brevo account level (support ticket -> compliance review); it
+        # cannot be done from application code. Our own /c/ tracking still
+        # records the click (with recipient/campaign attribution) when the
+        # recipient follows Brevo's redirect through to us.
         payload = {
             "sender": {"name": self.sender.name, "email": self.sender.email},
             "to": [{"email": to_email}],
@@ -223,7 +300,11 @@ class MailgunProvider(BaseEmailProvider):
         reply_to: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
+        log_context = _maybe_log_outbound(
+            self.sender, 'mailgun', 'api', to_email, html_content, log_context,
+        )
         domain = self.sender.api_domain or self.sender.email.split('@')[-1]
         url = f"https://api.mailgun.net/v3/{domain}/messages"
         data = {
@@ -241,6 +322,10 @@ class MailgunProvider(BaseEmailProvider):
                 data[f"h:{k}"] = v
         if tags:
             data["o:tag"] = tags
+        if getattr(self.sender, 'disable_provider_click_tracking', False):
+            # Per-message opt-out: Mailgun leaves our links untouched while
+            # our own tracking stays fully active.
+            data["o:tracking-clicks"] = "no"
 
         try:
             resp = requests.post(url, auth=("api", self.sender.password_or_key), data=data, timeout=15)
@@ -286,7 +371,11 @@ class SendGridProvider(BaseEmailProvider):
         reply_to: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
+        log_context = _maybe_log_outbound(
+            self.sender, 'sendgrid', 'api', to_email, html_content, log_context,
+        )
         payload = {
             "personalizations": [{"to": [{"email": to_email}]}],
             "from": {"email": self.sender.email, "name": self.sender.name},
@@ -301,6 +390,12 @@ class SendGridProvider(BaseEmailProvider):
             payload["headers"] = headers
         if tags:
             payload["categories"] = tags
+        if getattr(self.sender, 'disable_provider_click_tracking', False):
+            # Per-message opt-out: SendGrid leaves our links untouched while
+            # our own tracking stays fully active.
+            payload["tracking_settings"] = {
+                "click_tracking": {"enable": False, "enable_text": False}
+            }
 
         try:
             resp = requests.post(
@@ -350,7 +445,11 @@ class PostmarkProvider(BaseEmailProvider):
         reply_to: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
+        log_context = _maybe_log_outbound(
+            self.sender, 'postmark', 'api', to_email, html_content, log_context,
+        )
         payload = {
             "From": self.sender.display_from,
             "To": to_email,
@@ -365,6 +464,10 @@ class PostmarkProvider(BaseEmailProvider):
             payload["Headers"] = [{"Name": k, "Value": v} for k, v in headers.items()]
         if tags and len(tags) > 0:
             payload["Tag"] = tags[0]
+        if getattr(self.sender, 'disable_provider_click_tracking', False):
+            # Explicit opt-out (Postmark never rewrites links unless link
+            # tracking was enabled at the server level).
+            payload["TrackLinks"] = "None"
 
         try:
             resp = requests.post(
@@ -412,13 +515,19 @@ class AmazonSESProvider(BaseEmailProvider):
         reply_to: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        log_context: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         # If host is provided, route via SMTP endpoint for Amazon SES
-        if self.sender.host:
+        ses_smtp_mode = bool(self.sender.host)
+        log_context = _maybe_log_outbound(
+            self.sender, 'ses', 'smtp' if ses_smtp_mode else 'sandbox',
+            to_email, html_content, log_context,
+        )
+        if ses_smtp_mode:
             smtp_prov = SMTPProvider(self.sender)
-            return smtp_prov.send_email(to_email, subject, html_content, text_content, reply_to, headers, tags)
+            return smtp_prov.send_email(to_email, subject, html_content, text_content, reply_to, headers, tags, log_context)
         # Sandbox fallback for simulated SES
-        return SandboxProvider(self.sender).send_email(to_email, subject, html_content, text_content, reply_to, headers, tags)
+        return SandboxProvider(self.sender).send_email(to_email, subject, html_content, text_content, reply_to, headers, tags, log_context)
 
     def test_connection(self) -> Tuple[bool, str]:
         if self.sender.host:
