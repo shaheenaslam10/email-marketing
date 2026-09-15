@@ -154,15 +154,30 @@ class CRedirectFailureModeTests(TestCase):
         self.assertEqual(r.status_code, 410)
         self.assertEqual(CampaignLinkClickEvent.objects.count(), 0)
 
-    def test_paused_campaign_410_without_event(self):
+    def test_paused_campaign_link_redirects_and_tracks(self):
         paused = Campaign.objects.create(
             name='P', subject='S', sender=self.sender,
             status=Campaign.Status.PAUSED, html_content='<p>x</p>',
             destination_url=ODK_URL)
-        self._link('PAUSED01', dest=ODK_URL, campaign=paused)
+        link = self._link('PAUSED01', dest=ODK_URL, campaign=paused)
         r = self.anon.get('/c/PAUSED01/', HTTP_USER_AGENT=HUMAN_UA)
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r.url, ODK_URL)
+        self.assertEqual(
+            CampaignLinkClickEvent.objects.filter(link=link).count(), 1)
+
+    def test_cancelled_campaign_410_without_event(self):
+        cancelled = Campaign.objects.create(
+            name='X', subject='S', sender=self.sender,
+            status=Campaign.Status.CANCELLED, html_content='<p>x</p>',
+            destination_url=ODK_URL)
+        link = self._link('CXLD0001', dest=ODK_URL, campaign=cancelled)
+        r = self.anon.get('/c/CXLD0001/', HTTP_USER_AGENT=HUMAN_UA)
         self.assertEqual(r.status_code, 410)
+        self.assertIn('no longer active', r.content.decode())
         self.assertEqual(CampaignLinkClickEvent.objects.count(), 0)
+        link.refresh_from_db()
+        self.assertEqual(link.click_count, 0)
 
     def test_blank_destination_400_without_event(self):
         self._link('BLANK001', dest='')

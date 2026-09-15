@@ -109,3 +109,13 @@ class RedirectTypeParityTests(TestCase):
         s_link.refresh_from_db()
         self.assertEqual(r_link.click_count, 0)
         self.assertEqual(s_link.click_count, 0)
+
+    def test_paused_campaign_recipient_redirects_and_attributes(self):
+        link = self._link('PAUSR001', contact=self.contact)
+        self.campaign.status = Campaign.Status.PAUSED
+        self.campaign.save(update_fields=['status'])
+        r = self._click('PAUSR001')
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r.url, ODK_URL)
+        evt = CampaignLinkClickEvent.objects.get(link=link)
+        self.assertEqual(evt.contact, self.contact)

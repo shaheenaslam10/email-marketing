@@ -269,13 +269,23 @@ class CampaignTrackingLinkTests(TestCase):
         self.assertEqual(resp.status_code, 410)
         self.assertEqual(CampaignLinkClickEvent.objects.count(), 0)
 
-    def test_paused_or_cancelled_campaign_disables_link(self):
+    def test_paused_campaign_links_keep_working(self):
+        # Pause stops sending/reminders, not previously issued links:
+        # recipients already hold these URLs in delivered mail.
         link = self._make_link()
-        for st in (Campaign.Status.PAUSED, Campaign.Status.CANCELLED):
-            self.campaign.status = st
-            self.campaign.save(update_fields=['status'])
-            resp = self.anon.get(f'/c/{link.tracking_token}/', HTTP_USER_AGENT=HUMAN_UA)
-            self.assertEqual(resp.status_code, 410, f'status {st} should disable')
+        self.campaign.status = Campaign.Status.PAUSED
+        self.campaign.save(update_fields=['status'])
+        resp = self.anon.get(f'/c/{link.tracking_token}/', HTTP_USER_AGENT=HUMAN_UA)
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.url, self.campaign.destination_url)
+        self.assertEqual(CampaignLinkClickEvent.objects.count(), 1)
+
+    def test_cancelled_campaign_disables_link(self):
+        link = self._make_link()
+        self.campaign.status = Campaign.Status.CANCELLED
+        self.campaign.save(update_fields=['status'])
+        resp = self.anon.get(f'/c/{link.tracking_token}/', HTTP_USER_AGENT=HUMAN_UA)
+        self.assertEqual(resp.status_code, 410)
         self.assertEqual(CampaignLinkClickEvent.objects.count(), 0)
 
     def test_draft_campaign_link_still_redirects_for_owner_testing(self):
