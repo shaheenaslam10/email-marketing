@@ -50,9 +50,15 @@ def generate_unique_tracking_token(model, length: int = 8, max_attempts: int = 2
     raise RuntimeError(f"Could not generate a unique tracking token for {model.__name__}")
 
 
-def build_campaign_short_url(token: str, request=None) -> str:
-    """Builds the public branded URL for a campaign tracking link token."""
-    return f"{get_shortener_base_url(request)}/c/{token}"
+def build_campaign_short_url(token: str) -> str:
+    """Builds the public branded URL for a campaign tracking link token.
+
+    Canonical URL builder shared by Step 1 (shareable) and Step 5
+    (per-recipient) link creation. The base comes solely from
+    configuration (see get_shortener_base_url); the inbound request
+    host is never consulted, so generation cannot leak environments.
+    """
+    return f"{get_shortener_base_url()}/c/{token}"
 
 
 def append_query_params(destination_url: str, query_string: str) -> str:
@@ -66,17 +72,17 @@ def append_query_params(destination_url: str, query_string: str) -> str:
     return f"{destination_url}{separator}{query_string}"
 
 
-def get_shortener_base_url(request=None) -> str:
+def get_shortener_base_url() -> str:
     """
     Canonical base URL embedded in generated /c/<token> tracking links.
+    Single source of truth used by Step 1 and Step 5 creation paths.
     Honours explicit configuration exactly as set (including localhost
     for local development). The production default lives in
-    core/settings.py (SHORTENER_BASE_URL); no domain is hard-coded here.
+    core/settings.py (SHORTENER_BASE_URL); no domain is hard-coded here
+    and the inbound request host is never used as a fallback.
     """
     configured = (getattr(settings, 'SHORTENER_BASE_URL', None)
                   or getattr(settings, 'BASE_TRACKING_URL', None))
-    if not configured and request is not None:
-        configured = f"{request.scheme}://{request.get_host()}"
     if not configured:
         # Unreachable in practice: core/settings.py always defines
         # SHORTENER_BASE_URL (production default). Localhost fails safe

@@ -10,7 +10,7 @@ from apps.contacts.models import Contact
 from apps.senders.models import Sender
 from apps.groups.models import TestEmailGroup, ContactGroup
 from apps.email_providers.providers import get_email_provider
-from .services import render_content_variables, validate_campaign_variables, wrap_tracking, expand_tracking_placeholders
+from .services import render_content_variables, validate_campaign_variables, wrap_tracking, expand_tracking_placeholders, create_shareable_tracking_link
 from apps.reminders.services import launch_initial_campaign
 
 logger = logging.getLogger(__name__)
@@ -511,9 +511,6 @@ class CampaignViewSet(viewsets.ModelViewSet):
         """
         from apps.tracking.models import CampaignTrackingLink
         from apps.tracking.serializers import CampaignTrackingLinkSerializer
-        from apps.tracking.utils import (
-            generate_unique_tracking_token, build_campaign_short_url,
-        )
         campaign = self.get_object()
 
         if request.method == 'GET':
@@ -529,15 +526,16 @@ class CampaignViewSet(viewsets.ModelViewSet):
         serializer = CampaignTrackingLinkSerializer(
             data=request.data, context={'campaign': campaign})
         serializer.is_valid(raise_exception=True)
-        token = generate_unique_tracking_token(CampaignTrackingLink, length=8)
-        link = CampaignTrackingLink.objects.create(
-            campaign=campaign,
-            name=(serializer.validated_data.get('name') or '').strip(),
-            destination_url=(serializer.validated_data.get('destination_url') or '').strip(),
-            is_active=serializer.validated_data.get('is_active', True),
-            tracking_token=token,
-            short_url=build_campaign_short_url(token, request),
+        # Canonical shareable creation (same token generator, URL builder
+        # and destination rule as the per-recipient Step 5 path).
+        link = create_shareable_tracking_link(
+            campaign,
+            name=serializer.validated_data.get('name') or '',
+            destination_url=serializer.validated_data.get('destination_url') or '',
         )
+        if not serializer.validated_data.get('is_active', True):
+            link.is_active = False
+            link.save(update_fields=['is_active', 'updated_at'])
         return Response(
             CampaignTrackingLinkSerializer(link).data,
             status=status.HTTP_201_CREATED,
@@ -601,7 +599,7 @@ class CampaignViewSet(viewsets.ModelViewSet):
             )
         token = generate_unique_tracking_token(CampaignTrackingLink, length=8)
         link.tracking_token = token
-        link.short_url = build_campaign_short_url(token, request)
+        link.short_url = build_campaign_short_url(token)
         link.save(update_fields=['tracking_token', 'short_url', 'updated_at'])
         return Response(CampaignTrackingLinkSerializer(link).data)
 

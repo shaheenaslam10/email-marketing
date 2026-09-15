@@ -1127,12 +1127,22 @@
                 <div class="flex items-center justify-between text-[11px] text-slate-500">
                     <span>${l.click_count} click${l.click_count === 1 ? '' : 's'} (${l.human_click_count} human${l.bot_click_count ? `, ${l.bot_click_count} bot` : ''})${l.destination_url ? ` &bull; &rarr; <span class="font-mono">${escapeHtml(l.destination_url.length > 48 ? l.destination_url.slice(0, 48) + '…' : l.destination_url)}</span>` : ' &bull; &rarr; campaign default'}</span>
                     <span class="flex items-center gap-1.5">
+                        <button type="button" onclick="startEditTrackingLink(${l.id})" class="font-bold text-indigo-600 hover:text-indigo-800">Edit</button>
+                        <span class="text-slate-300">|</span>
                         <button type="button" onclick="toggleTrackingLink(${l.id}, ${l.is_active ? 'false' : 'true'})" class="font-bold text-indigo-600 hover:text-indigo-800">${l.is_active ? 'Disable' : 'Enable'}</button>
                         <span class="text-slate-300">|</span>
                         <button type="button" onclick="regenerateTrackingLink(${l.id})" class="font-bold text-slate-500 hover:text-slate-800" title="Issue a new URL (invalidates the old one)">Regenerate</button>
                         <span class="text-slate-300">|</span>
                         <button type="button" onclick="deleteTrackingLink(${l.id})" class="font-bold text-rose-500 hover:text-rose-700">Delete</button>
                     </span>
+                </div>
+                <div id="edit-tracking-link-${l.id}" class="hidden space-y-2 pt-1">
+                    <input type="text" id="edit-tracking-link-name-${l.id}" value="${escapeHtml(l.name || '')}" placeholder="Link label (optional)" class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <input type="text" id="edit-tracking-link-url-${l.id}" value="${escapeHtml(l.destination_url || '')}" placeholder="Override destination (blank = campaign default)" class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="saveTrackingLink(${l.id})" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] rounded-lg">Save</button>
+                        <button type="button" onclick="cancelEditTrackingLink(${l.id})" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[11px] rounded-lg">Cancel</button>
+                    </div>
                 </div>
             </div>
         `).join('');
@@ -1183,6 +1193,43 @@
             await loadTrackingLinks();
         } catch (err) {
             showToast('Could not update link.', 'error');
+        }
+    }
+
+    function startEditTrackingLink(linkId) {
+        const row = document.getElementById('edit-tracking-link-' + linkId);
+        if (row) row.classList.remove('hidden');
+    }
+
+    function cancelEditTrackingLink(linkId) {
+        const row = document.getElementById('edit-tracking-link-' + linkId);
+        if (row) row.classList.add('hidden');
+    }
+
+    // Step 1 inline edit: label + destination only. PATCH never rotates the
+    // token/URL (use Regenerate for a new URL), so existing links keep
+    // resolving while metadata is updated.
+    async function saveTrackingLink(linkId) {
+        const nameEl = document.getElementById('edit-tracking-link-name-' + linkId);
+        const urlEl = document.getElementById('edit-tracking-link-url-' + linkId);
+        try {
+            const res = await fetch(`/api/campaigns/${campaignId}/tracking-links/${linkId}/`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify({
+                    name: nameEl ? nameEl.value.trim() : '',
+                    destination_url: urlEl ? urlEl.value.trim() : ''
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                const msg = data.destination_url ? data.destination_url.join(' ') : (data.error || JSON.stringify(data));
+                throw new Error(msg);
+            }
+            showToast('Tracking link updated.', 'success');
+            await loadTrackingLinks();
+        } catch (err) {
+            showToast('Could not update link: ' + err.message, 'error');
         }
     }
 
