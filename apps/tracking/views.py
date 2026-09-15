@@ -256,8 +256,13 @@ class CampaignLinkRedirectView(View):
                 'error_message': 'This tracking link has been disabled by the campaign owner.'
             }, status=410)
 
+        # Only a CANCELLED (terminal) campaign disables issued links.
+        # PAUSED stops sending/reminders (see process_single_campaign_message)
+        # but previously issued tracking URLs keep working: recipients
+        # already hold these links in delivered mail, and the per-link
+        # is_active flag remains the link-level kill switch.
         campaign_status = (link.campaign.status or '').upper()
-        if campaign_status in ('PAUSED', 'CANCELLED'):
+        if campaign_status == 'CANCELLED':
             return render(request, 'tracking/link_error.html', {
                 'error_message': 'This campaign is no longer active, so the tracking link is disabled.'
             }, status=410)
