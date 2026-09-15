@@ -290,7 +290,7 @@
         let linkHtml = '';
         if (enableTracking) {
             const targetAttr = openInNewTab ? 'target="_blank" rel="noopener noreferrer"' : '';
-            linkHtml = `<a href="${trackedPlaceholderUrl()}" data-original-url="${esc(originalUrl)}" data-link-name="${esc(linkName || displayText)}" data-track="true" ${targetAttr}>${esc(displayText)}</a>`alUrl)}" data-link-name="${esc(linkName || displayText)}" data-track="true" ${targetAttr}>${esc(displayText)}</a>`;
+            linkHtml = `<a href="${trackedPlaceholderUrl()}" data-original-url="${esc(originalUrl)}" data-link-name="${esc(linkName || displayText)}" data-track="true" ${targetAttr}>${esc(displayText)}</a>`;
         } else {
             const targetAttr = openInNewTab ? 'target="_blank" rel="noopener noreferrer"' : '';
             linkHtml = `<a href="${esc(originalUrl)}" data-track="false" ${targetAttr}>${esc(displayText)}</a>`;
