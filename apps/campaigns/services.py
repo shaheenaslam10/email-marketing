@@ -159,6 +159,54 @@ def expand_tracking_placeholders(html_content, campaign=None, contact=None):
     return ''.join(parts)
 
 
+# Canonical tracking-link creation services. Step 1 (shareable) and
+# Step 5 (per-recipient) links are rows of the same CampaignTrackingLink
+# model, minted by the two helpers below with the same token generator
+# and URL builder, resolved by the same resolve_destination() rule and
+# /c/<token> redirect, and reported from the same CampaignLinkClickEvent
+# table. The only intentional difference is contact=None + SHAREABLE vs
+# contact=<recipient> + RECIPIENT.
+
+
+def create_shareable_tracking_link(campaign, *, name='', destination_url=''):
+    """Creates a SHAREABLE CampaignTrackingLink (Step 1).
+
+    The link destination may be blank to inherit the campaign default
+    destination at redirect time, but at least one of the two must be a
+    usable absolute URL: raises ValueError otherwise, so a /c/<token>
+    without a destination can never be minted.
+    """
+    from apps.tracking.models import CampaignTrackingLink
+    from apps.tracking.utils import (
+        generate_unique_tracking_token, build_campaign_short_url,
+        validate_destination_url,
+    )
+
+    name = (name or '').strip()
+    destination_url = (destination_url or '').strip()
+    if destination_url and not validate_destination_url(destination_url):
+        raise ValueError(
+            'Destination URL must be a valid absolute http:// or https:// URL.'
+        )
+    effective = destination_url or (campaign.destination_url or '').strip()
+    if not effective:
+        raise ValueError(
+            'Set a destination URL for this link or a default '
+            'destination URL on the campaign; otherwise the link '
+            'cannot redirect.'
+        )
+    token = generate_unique_tracking_token(CampaignTrackingLink, length=8)
+    return CampaignTrackingLink.objects.create(
+        campaign=campaign,
+        link_type=CampaignTrackingLink.LinkType.SHAREABLE,
+        name=name,
+        destination_url=destination_url,
+        is_active=True,
+        tracking_token=token,
+        short_url=build_campaign_short_url(token),
+    )
+
+
 def get_or_create_recipient_tracking_link(campaign, contact, target_url, link_name=''):
     """Creates/reuses ShortenedLink + RECIPIENT CampaignTrackingLink.
 
@@ -167,7 +215,7 @@ def get_or_create_recipient_tracking_link(campaign, contact, target_url, link_na
     single link per (campaign, destination). Campaign is required.
     """
     from apps.tracking.models import ShortenedLink, CampaignTrackingLink
-    from apps.tracking.utils import generate_secure_token, build_campaign_short_url
+    from apps.tracking.utils import generate_unique_tracking_token, build_campaign_short_url
 
     shortened_link, _ = ShortenedLink.objects.get_or_create(
         campaign=campaign,
@@ -192,11 +240,9 @@ def get_or_create_recipient_tracking_link(campaign, contact, target_url, link_na
     ).first()
 
     if not recipient_link:
-        # Generate unique token
-        for _ in range(10):
-            new_token = generate_secure_token(8)
-            if not CampaignTrackingLink.objects.filter(tracking_token=new_token).exists():
-                break
+        # Canonical token generation, shared with shareable links.
+        new_token = generate_unique_tracking_token(
+            CampaignTrackingLink, length=8)
         rec_short_url = build_campaign_short_url(new_token)
         recipient_link = CampaignTrackingLink.objects.create(
             campaign=campaign,

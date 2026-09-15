@@ -80,10 +80,10 @@
                     <span class="px-2 py-0.5 bg-blue-100 text-blue-800 font-bold rounded-md text-[10px]" id="tu-preview-badge">Branded Domain</span>
                 </div>
                 <div class="p-2.5 bg-white border border-slate-200 rounded-xl font-mono text-xs text-blue-600 font-bold break-all shadow-2xs" id="tu-preview-box">
-                    {{ shortener_base_url|default:'https://marketing.iriscommunications.cloud' }}/c/{unique_link}
+                    {{ shortener_base_url }}/c/{unique_link}
                 </div>
                 <p class="text-[10px] text-slate-500 leading-normal" id="tu-preview-note">
-                    * The actual recipient-specific URL (e.g. <code>{{ shortener_base_url|default:'https://marketing.iriscommunications.cloud' }}/c/A7K29XQ2</code>) will be generated automatically for every individual contact when the campaign is dispatched.
+                    * The actual recipient-specific URL (e.g. <code>{{ shortener_base_url }}/c/A7K29XQ2</code>) will be generated automatically for every individual contact when the campaign is dispatched.
                 </p>
             </div>
         </div>
@@ -103,7 +103,7 @@
 
 <script>
     // Branded shortener base URL (server config; falls back to production).
-    window.SHORTENER_BASE_URL = window.SHORTENER_BASE_URL || "{{ shortener_base_url|default:'https://marketing.iriscommunications.cloud' }}";
+    window.SHORTENER_BASE_URL = window.SHORTENER_BASE_URL || "{{ shortener_base_url }}";
     function trackedPlaceholderUrl() {
         return window.SHORTENER_BASE_URL.replace(/\/+$/, '') + '/c/{unique_link}';
     }

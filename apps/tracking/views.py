@@ -130,7 +130,7 @@ class UnsubscribeView(View):
 class ShortUrlRedirectView(View):
     """
     Public high-performance short URL redirect endpoint.
-    GET /:tracking_token (e.g. GET https://marketing.iriscommunications.cloud/A7K29X)
+    GET /:tracking_token (e.g. GET <tracking-base>/A7K29X)
     (Requirement 2, 3, 4, 13, 14)
     """
 
@@ -223,7 +223,7 @@ class ShortUrlRedirectView(View):
 class CampaignLinkRedirectView(View):
     """
     Unified branded short-link endpoint.
-    GET /c/:tracking_token (e.g. GET https://marketing.iriscommunications.cloud/c/A7K29XQ2)
+    GET /c/:tracking_token (e.g. GET <tracking-base>/c/A7K29XQ2)
 
     Brevo-style intermediate redirect:
       1. Validate the token and resolve the campaign link.
