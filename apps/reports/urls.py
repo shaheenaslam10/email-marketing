@@ -3,7 +3,7 @@ from .views import (
     CampaignReportView, CampaignReportMessagesView,
     CampaignReportLinkRecipientsView, CampaignReportLinkClicksView,
     CampaignReportShareableLinksView,
-    CampaignExportView, DashboardStatsView
+    CampaignExportView, DashboardStatsView, ReportXlsxExportView
 )
 
 urlpatterns = [
@@ -13,5 +13,6 @@ urlpatterns = [
     path('campaigns/<int:pk>/report/link-clicks/', CampaignReportLinkClicksView.as_view(), name='campaign_report_link_clicks'),
     path('campaigns/<int:pk>/report/shareable-links/', CampaignReportShareableLinksView.as_view(), name='campaign_report_shareable_links'),
     path('campaigns/<int:pk>/export/<str:fmt>/', CampaignExportView.as_view(), name='campaign_export'),
+    path('campaigns/report/xlsx/', ReportXlsxExportView.as_view(), name='campaign_report_xlsx'),
     path('dashboard/stats/', DashboardStatsView.as_view(), name='dashboard_stats'),
 ]

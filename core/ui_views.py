@@ -92,7 +92,12 @@ def templates_view(request):
 @login_required
 def campaign_report_view(request, pk):
     campaign = get_object_or_404(Campaign, pk=pk)
-    return render(request, 'reports/campaign_report.html', {'campaign': campaign})
+    target_contacts_count = Contact.objects.filter(
+        groups__in=campaign.groups.all()).distinct().count()
+    return render(request, 'reports/campaign_report.html', {
+        'campaign': campaign,
+        'target_contacts_count': target_contacts_count,
+    })
 
 
 @login_required

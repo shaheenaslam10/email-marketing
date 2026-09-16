@@ -16,7 +16,12 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
 
-from .services import get_campaign_full_report
+from .services import (
+    build_report_filename,
+    get_campaign_full_report,
+    get_recipient_lifecycle_rows,
+    reminder_status_label,
+)
 from apps.campaigns.models import Campaign, CampaignMessage
 from apps.contacts.models import Contact
 
@@ -1127,28 +1132,47 @@ def export_campaign_pdf(campaign: Campaign) -> HttpResponse:
 # CSV EXPORT
 # -------------------------------------------------------------------------
 
-def export_campaign_csv(campaign: Campaign) -> HttpResponse:
-    """Exports comprehensive CSV summary of the campaign."""
-    report = get_campaign_full_report(campaign)
-    meta = _get_campaign_metadata(campaign)
-    response = HttpResponse(content_type='text/csv')
-    response['Content-Disposition'] = f'attachment; filename="campaign_{campaign.id}_summary.csv"'
+def export_campaign_csv(campaign: Campaign, filters=None) -> HttpResponse:
+    """Recipient-level operational CSV for a single campaign.
 
-    writer = csv.writer(response)
-    writer.writerow(['Campaign Analytics Report', meta['name']])
-    writer.writerow(['Subject Line', meta['subject']])
-    writer.writerow(['Sender', meta['sender']])
-    writer.writerow(['Campaign Type', meta['type']])
-    writer.writerow(['ODK Entity List', meta['odk_name']])
-    writer.writerow(['Automation Status', meta['automation_status']])
-    writer.writerow(['Next Reminder', meta['next_reminder']])
-    writer.writerow([])
-
-    writer.writerow(['Metric', 'Value', 'Rate'])
-    writer.writerow(['Initial Eligible', report['kpi']['initial_eligible'], '100%'])
-    writer.writerow(['Delivered', report['kpi']['delivered_count'], f"{report['kpi']['delivery_rate']}%"])
-    writer.writerow(['Unique Opens', report['kpi']['unique_opened_count'], f"{report['kpi']['open_rate']}%"])
-    writer.writerow(['Unique Clicks', report['kpi']['unique_clicks_count'], f"{report['kpi']['click_rate']}%"])
-    writer.writerow(['Survey Completed (USED)', report['survey_conversion']['used_count'], f"{report['survey_conversion']['completion_rate']}%"])
-    writer.writerow(['Survey Pending (UNUSED)', report['survey_conversion']['unused_count'], f"{100 - report['survey_conversion']['completion_rate']}%"])
+    Same source of truth as the workbook's Recipient Lifecycle sheet:
+    shared get_recipient_lifecycle_rows, identical lifecycle values,
+    and the shared reminder_status_label. One row per recipient.
+    UTF-8 with BOM so Excel opens it correctly; QUOTE_MINIMAL keeps
+    commas/newlines inside fields intact.
+    """
+    rows = get_recipient_lifecycle_rows(campaign, filters or {})
+    # Workbook parity: missing dates render as an em dash everywhere.
+    missing_as_dash = lambda value: '\u2014' if value == '-' else value
+    output = io.StringIO()
+    writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL, lineterminator='\n')
+    writer.writerow([
+        'Campaign', 'Name', 'Phone', 'Email', 'Sent', 'Sent At',
+        'Opened', 'Opened At', 'Clicked', 'Click Count',
+        'First Clicked At', 'Tracking Token', 'Completed',
+        'Completed At', 'ODK Submission ID', 'Reminder Eligible',
+        'Reminder Status', 'Reminder Reason',
+    ])
+    for r in rows:
+        writer.writerow([
+            campaign.name,
+            r['name'], r['phone'], r['email'],
+            'YES' if r['has_sent'] else '\u2014', missing_as_dash(r['email_sent_at']),
+            'YES' if r['has_opened'] else '\u2014', missing_as_dash(r['email_opened_at']),
+            'YES' if r['has_clicked'] else '\u2014', r['total_clicks'],
+            missing_as_dash(r['first_click']), r['tracking_token'] or '\u2014',
+            'COMPLETED' if r['contact_status'] == 'USED' else 'INCOMPLETE',
+            missing_as_dash(r['completed_at']), r['odk_submission_id'] or '\u2014',
+            'ELIGIBLE' if r['reminder_eligible'] else 'SUPPRESSED',
+            reminder_status_label(r), r['reminder_reason'],
+        ])
+    filename = build_report_filename(
+        [campaign.name],
+        lifecycle=str((filters or {}).get('lifecycle', 'all') or 'all'),
+        search=str((filters or {}).get('search', '') or ''),
+        ext='csv',
+    )
+    response = HttpResponse(
+        '\ufeff' + output.getvalue(), content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="%s"' % filename
     return response

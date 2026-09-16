@@ -7,7 +7,10 @@ from apps.groups.models import ContactGroup
 from apps.reminders.models import ReminderConfiguration
 from apps.tracking.models import EmailEvent
 from django.db.models import Q
-from .services import get_campaign_full_report
+from .services import (
+    get_campaign_full_report, get_recipient_lifecycle_rows,
+    get_click_activity_rows,
+)
 from .exporters import export_campaign_xlsx, export_campaign_csv, export_campaign_pdf
 
 
@@ -113,22 +116,6 @@ class CampaignReportMessagesView(APIView):
         })
 
 
-def _recipient_link_label(rl):
-    """Display name for a legacy RecipientLink or RECIPIENT /c/ link."""
-    sl = getattr(rl, 'shortened_link', None)
-    if sl is not None:
-        return sl.link_name or sl.original_url[:35]
-    return getattr(rl, 'name', '') or 'Tracked Link'
-
-
-def _recipient_link_destination(rl):
-    """Destination URL for a legacy RecipientLink or RECIPIENT /c/ link."""
-    sl = getattr(rl, 'shortened_link', None)
-    if sl is not None:
-        return sl.original_url
-    return getattr(rl, 'destination_url', '') or ''
-
-
 class CampaignReportLinkRecipientsView(APIView):
     """
     Recipient-Level Link Tracking Report (Requirements 6, 8, 9, 14).
@@ -143,173 +130,25 @@ class CampaignReportLinkRecipientsView(APIView):
         except Campaign.DoesNotExist:
             return Response({'error': 'Campaign not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        from apps.tracking.models import RecipientLink, ShortenedLink, LinkClickEvent
         import csv
         import io
         from django.http import HttpResponse
 
-        status_filter = request.GET.get('status', 'all').strip().lower()
-        contact_status_filter = request.GET.get('contact_status', 'all').strip().upper()
-        link_id_filter = request.GET.get('link_id', '').strip()
-        group_id_filter = request.GET.get('group_id', '').strip()
-        job_id_filter = request.GET.get('job_id', '').strip()
-        search_query = request.GET.get('search', '').strip()
-        date_from = request.GET.get('date_from', '').strip()
-        date_to = request.GET.get('date_to', '').strip()
-        export_fmt = request.GET.get('export', '').strip().lower()
-
-        # All contacts belonging to campaign groups or who received messages
-        campaign_groups = campaign.groups.all()
-        contacts_qs = Contact.objects.filter(
-            Q(groups__in=campaign_groups) | Q(campaign_messages__campaign=campaign)
-        ).distinct()
-
-        if contact_status_filter in ('USED', 'UNUSED'):
-            contacts_qs = contacts_qs.filter(status=contact_status_filter)
-
-        if group_id_filter and group_id_filter.isdigit():
-            contacts_qs = contacts_qs.filter(groups__id=int(group_id_filter))
-
-        if job_id_filter:
-            contacts_qs = contacts_qs.filter(job_id__icontains=job_id_filter)
-
-        if search_query:
-            contacts_qs = contacts_qs.filter(
-                Q(first_name__icontains=search_query) |
-                Q(last_name__icontains=search_query) |
-                Q(name__icontains=search_query) |
-                Q(email__icontains=search_query) |
-                Q(job_id__icontains=search_query)
-            )
-
-        # Get recipient links for this campaign: legacy root-level
-        # RecipientLink rows plus RECIPIENT-type /c/ links. SHAREABLE
-        # links are anonymous and never enter this per-recipient view.
-        from apps.tracking.models import CampaignTrackingLink
-        rl_qs = RecipientLink.objects.filter(campaign=campaign).select_related('shortened_link', 'contact')
-        rc_qs = CampaignTrackingLink.objects.filter(
-            campaign=campaign,
-            link_type=CampaignTrackingLink.LinkType.RECIPIENT,
-        ).select_related('shortened_link', 'contact')
-        if link_id_filter and link_id_filter.isdigit():
-            rl_qs = rl_qs.filter(shortened_link_id=int(link_id_filter))
-            rc_qs = rc_qs.filter(shortened_link_id=int(link_id_filter))
-
-        # Index recipient links by contact_id
-        from collections import defaultdict
-        from apps.reminders.services import reminder_eligibility
-        contact_links_map = defaultdict(list)
-        for rl in rl_qs:
-            contact_links_map[rl.contact_id].append(rl)
-        for rl in rc_qs:
-            contact_links_map[rl.contact_id].append(rl)
-
-        # Index lifecycle messages by contact (single query): earliest
-        # INITIAL/REMINDER send + open timestamps per recipient. TEST
-        # messages are excluded so test mail never pollutes lifecycle state.
-        contact_msgs_map = defaultdict(list)
-        for m in campaign.messages.filter(
-            message_type__in=[
-                CampaignMessage.MessageType.INITIAL,
-                CampaignMessage.MessageType.REMINDER,
-            ]
-        ).only('contact_id', 'sent_at', 'opened_at'):
-            contact_msgs_map[m.contact_id].append(m)
-
-        # Build combined recipient rows
-        rows = []
-        for contact in contacts_qs:
-            rlinks = contact_links_map.get(contact.id, [])
-            total_clicks = sum(rl.click_count for rl in rlinks)
-            human_clicks = sum(rl.human_click_count for rl in rlinks)
-            bot_clicks = sum(rl.bot_click_count for rl in rlinks)
-
-            # Dates
-            first_clicks = [rl.first_clicked_at for rl in rlinks if rl.first_clicked_at]
-            last_clicks = [rl.last_clicked_at for rl in rlinks if rl.last_clicked_at]
-            first_click_at = min(first_clicks) if first_clicks else None
-            last_click_at = max(last_clicks) if last_clicks else None
-
-            # Filter by date range if provided
-            if date_from:
-                try:
-                    df = timezone.datetime.fromisoformat(date_from)
-                    if not first_click_at or first_click_at < df:
-                        continue
-                except Exception:
-                    pass
-            if date_to:
-                try:
-                    dt = timezone.datetime.fromisoformat(date_to)
-                    if not last_click_at or last_click_at > dt:
-                        continue
-                except Exception:
-                    pass
-
-            # Status filter
-            if status_filter == 'clicked' and total_clicks == 0:
-                continue
-            if status_filter == 'not_clicked' and total_clicks > 0:
-                continue
-            if status_filter == 'clicked_once' and total_clicks != 1:
-                continue
-            if status_filter == 'clicked_multiple' and total_clicks <= 1:
-                continue
-
-            # Link details summary
-            link_names = [_recipient_link_label(rl) for rl in rlinks]
-            display_link_name = ", ".join(link_names) if link_names else "No Link Generated"
-            sample_short_url = rlinks[0].short_url if rlinks else ""
-            sample_orig_url = _recipient_link_destination(rlinks[0]) if rlinks else ""
-
-            # Click type classification
-            if bot_clicks > 0 and human_clicks == 0:
-                click_type_str = "Suspected Bot"
-            elif human_clicks > 0:
-                click_type_str = "Human"
-            elif total_clicks > 0:
-                click_type_str = "Unknown"
-            else:
-                click_type_str = "None"
-
-            # Lifecycle: email sent/opened, ODK completion, reminder verdict.
-            msgs = contact_msgs_map.get(contact.id, [])
-            sent_times = [m.sent_at for m in msgs if m.sent_at]
-            open_times = [m.opened_at for m in msgs if m.opened_at]
-            email_sent_at = min(sent_times) if sent_times else None
-            email_opened_at = min(open_times) if open_times else None
-            completed_at = contact.odk_submitted_at
-            verdict = reminder_eligibility(contact, campaign)
-
-            rows.append({
-                'contact_id': contact.id,
-                'name': contact.name or f"{contact.first_name} {contact.last_name}".strip() or contact.email,
-                'email': contact.email,
-                'phone': contact.phone_number or '-',
-                'job_id': contact.job_id or '-',
-                'contact_status': contact.status,  # USED / UNUSED
-                'email_sent_at': email_sent_at.strftime('%d %b %Y, %I:%M %p') if email_sent_at else '-',
-                'email_opened_at': email_opened_at.strftime('%d %b %Y, %I:%M %p') if email_opened_at else '-',
-                'tracking_token': rlinks[0].tracking_token if rlinks else '',
-                'link_status': 'Clicked' if total_clicks > 0 else 'Not Clicked',
-                'first_click': first_click_at.strftime('%d %b %Y, %I:%M %p') if first_click_at else '-',
-                'last_click': last_click_at.strftime('%d %b %Y, %I:%M %p') if last_click_at else '-',
-                'total_clicks': total_clicks,
-                'human_clicks': human_clicks,
-                'bot_clicks': bot_clicks,
-                'click_type': click_type_str,
-                'completed_at': completed_at.strftime('%d %b %Y, %I:%M %p') if completed_at else '-',
-                'odk_submission_id': contact.odk_submission_id or '',
-                'reminder_eligible': verdict['eligible'],
-                'reminder_reason': verdict['reason'],
-                'link_name': display_link_name,
-                'short_url': sample_short_url,
-                'original_url': sample_orig_url,
-            })
-
-        # Sort: Clicked first, then most clicks, then name
-        rows.sort(key=lambda r: (r['total_clicks'], r['name']), reverse=True)
+        # Shared row builder: the JSON view, CSV/XLSX exports and the
+        # Excel workbook export all consume these same rows.
+        rows = get_recipient_lifecycle_rows(campaign, {
+            'status': request.GET.get('status', 'all'),
+            'contact_status': request.GET.get('contact_status', 'all'),
+            'link_id': request.GET.get('link_id', ''),
+            'group_id': request.GET.get('group_id', ''),
+            'job_id': request.GET.get('job_id', ''),
+            'search': request.GET.get('search', ''),
+            'date_from': request.GET.get('date_from', ''),
+            'date_to': request.GET.get('date_to', ''),
+            'lifecycle': request.GET.get('lifecycle', 'all'),
+        })
         total_count = len(rows)
+        export_fmt = request.GET.get('export', '').strip().lower()
 
         # Handle CSV export
         if export_fmt == 'csv':
@@ -438,11 +277,7 @@ class CampaignReportLinkClicksView(APIView):
         except Campaign.DoesNotExist:
             return Response({'error': 'Campaign not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        from apps.tracking.models import (
-            ShortenedLink, LinkClickEvent,
-            CampaignTrackingLink, CampaignLinkClickEvent,
-        )
-        from apps.tracking.utils import build_campaign_short_url
+        from apps.tracking.models import ShortenedLink
 
         try:
             limit = int(request.GET.get('limit', 50))
@@ -451,82 +286,10 @@ class CampaignReportLinkClicksView(APIView):
         limit = max(1, min(limit, 200))
 
         link_id = (request.GET.get('link_id') or '').strip()
-        selected_sl_id = int(link_id) if link_id.isdigit() else None
 
-        legacy_qs = LinkClickEvent.objects.filter(
-            campaign=campaign
-        ).select_related('recipient_link__shortened_link', 'contact')
-        new_qs = CampaignLinkClickEvent.objects.filter(
-            campaign=campaign,
-            link__link_type=CampaignTrackingLink.LinkType.RECIPIENT,
-        ).select_related('link__shortened_link', 'contact')
-        if selected_sl_id:
-            legacy_qs = legacy_qs.filter(
-                recipient_link__shortened_link_id=selected_sl_id)
-            new_qs = new_qs.filter(link__shortened_link_id=selected_sl_id)
-
-        def click_type_label(ct):
-            return {
-                'HUMAN': 'Human',
-                'SUSPECTED_BOT': 'Suspected Bot',
-                'UNKNOWN': 'Unknown',
-            }.get(ct, 'Unknown')
-
-        def contact_display(contact):
-            if not contact:
-                return '-', '-'
-            name = contact.name or (
-                (contact.first_name or '') + ' ' + (contact.last_name or '')
-            ).strip() or contact.email
-            return name, contact.email
-
-        rows = []
-        for e in legacy_qs.order_by('-clicked_at', '-id')[:limit]:
-            sl = e.recipient_link.shortened_link
-            name, email = contact_display(e.contact)
-            rows.append({
-                '_sort': (e.clicked_at, 'L', e.id),
-                'clicked_at': e.clicked_at.isoformat(),
-                'contact_name': name,
-                'contact_email': email,
-                'contact_phone': e.contact.phone_number if e.contact else '-',
-                'tracking_token': e.recipient_link.tracking_token,
-                'link_name': sl.link_name or 'Tracked Link',
-                'short_url': e.recipient_link.short_url,
-                'destination_url': sl.original_url,
-                'click_type': click_type_label(e.click_type),
-                'browser': e.browser or 'Unknown',
-                'operating_system': e.operating_system or 'Unknown',
-                'device_type': e.device_type or 'Unknown',
-                'referrer': e.referrer or '',
-            })
-        for e in new_qs.order_by('-clicked_at', '-id')[:limit]:
-            sl = e.link.shortened_link
-            name, email = contact_display(e.contact)
-            rows.append({
-                '_sort': (e.clicked_at, 'C', e.id),
-                'clicked_at': e.clicked_at.isoformat(),
-                'contact_name': name,
-                'contact_email': email,
-                'contact_phone': e.contact.phone_number if e.contact else '-',
-                'tracking_token': e.link.tracking_token,
-                'link_name': (sl.link_name if sl else None) or e.link.name or 'Tracked Link',
-                # Derived from the current base: the stored short_url
-                # may have been minted under another environment.
-                'short_url': build_campaign_short_url(
-                    e.link.tracking_token),
-                'destination_url': (e.link.destination_url or (sl.original_url if sl else '') or ''),
-                'click_type': click_type_label(e.click_type),
-                'browser': e.browser or 'Unknown',
-                'operating_system': e.operating_system or 'Unknown',
-                'device_type': e.device_type or 'Unknown',
-                'referrer': e.referrer or '',
-            })
-        rows.sort(key=lambda r: r['_sort'], reverse=True)
-        events = []
-        for r in rows[:limit]:
-            del r['_sort']
-            events.append(r)
+        # Shared row builder (legacy + RECIPIENT /c/ union, newest first).
+        events, total_events = get_click_activity_rows(
+            campaign, link_id=link_id or None, limit=limit)
 
         links = [
             {'id': sl.id, 'name': sl.link_name or sl.original_url[:40]}
@@ -537,7 +300,7 @@ class CampaignReportLinkClicksView(APIView):
         return Response({
             'campaign_id': campaign.id,
             'campaign_name': campaign.name,
-            'total_events': legacy_qs.count() + new_qs.count(),
+            'total_events': total_events,
             'links': links,
             'events': events,
         })
@@ -654,10 +417,95 @@ class CampaignExportView(APIView):
         if fmt_lower == 'xlsx':
             return export_campaign_xlsx(campaign)
         elif fmt_lower == 'csv':
-            return export_campaign_csv(campaign)
+            return export_campaign_csv(campaign, {
+                'lifecycle': request.GET.get('lifecycle', 'all'),
+                'status': request.GET.get('status', 'all'),
+                'contact_status': request.GET.get('contact_status', 'all'),
+                'link_id': request.GET.get('link_id', ''),
+                'group_id': request.GET.get('group_id', ''),
+                'job_id': request.GET.get('job_id', ''),
+                'date_from': request.GET.get('date_from', ''),
+                'date_to': request.GET.get('date_to', ''),
+            })
         elif fmt_lower == 'pdf':
             return export_campaign_pdf(campaign)
         return Response({'error': f'Unsupported export format {fmt}'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ReportXlsxExportView(APIView):
+    """
+    Multi-campaign Excel workbook export (the "Export Report" dialog).
+    Accepts JSON: campaign_ids [...], filters {...}, sections {...}.
+    Same IsAuthenticated access as every other campaign report endpoint.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from django.http import HttpResponse
+        from .services import get_visible_campaigns
+        from .workbook import build_campaign_workbook
+
+        data = request.data if isinstance(request.data, dict) else {}
+        scope = str(data.get('scope', '') or '').strip().lower()
+        raw_ids = data.get('campaign_ids', data.get('campaigns', []))
+        scope_all = scope == 'all' or (
+            isinstance(raw_ids, str) and raw_ids.strip().lower() == 'all')
+
+        # Same visibility as the /campaigns/ listing page: submitted ids
+        # outside the visible set are rejected, never exported.
+        visible = get_visible_campaigns(request.user)
+        if scope_all:
+            campaigns = list(visible.prefetch_related('groups'))
+            if not campaigns:
+                return Response({'error': 'No campaigns available to export.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+        else:
+            if isinstance(raw_ids, int):
+                raw_ids = [raw_ids]
+            try:
+                ids = [int(v) for v in (raw_ids or [])]
+            except (TypeError, ValueError):
+                return Response({'error': 'campaign_ids must be a list of campaign ids.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            # Dedupe, preserve order
+            ids = list(dict.fromkeys(ids))
+            if not ids:
+                return Response({'error': 'Select at least one campaign.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            # No campaign-count cap: per-campaign cost is ~10 indexed
+            # queries plus its own rows, so "All Campaigns" stays linear.
+            campaigns = list(visible.filter(pk__in=ids).prefetch_related('groups'))
+            found = {c.id for c in campaigns}
+            missing = [v for v in ids if v not in found]
+            if missing:
+                existing = set(Campaign.objects.filter(
+                    pk__in=missing).values_list('pk', flat=True))
+                forbidden = [v for v in missing if v in existing]
+                if forbidden:
+                    return Response(
+                        {'error': f'Not authorized for campaign(s): {forbidden}'},
+                        status=status.HTTP_403_FORBIDDEN)
+                return Response({'error': f'Unknown campaign(s): {missing}'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        filters = data.get('filters') or {}
+        if not isinstance(filters, dict):
+            return Response({'error': 'filters must be an object.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        sections = data.get('sections') or {}
+        if not isinstance(sections, dict):
+            return Response({'error': 'sections must be an object.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        content, filename = build_campaign_workbook(
+            campaigns, filters=filters, sections=sections, scope_all=scope_all)
+        response = HttpResponse(
+            content,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
 
 
 class DashboardStatsView(APIView):

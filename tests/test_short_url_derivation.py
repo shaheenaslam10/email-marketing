@@ -200,6 +200,7 @@ class DerivedShortUrlTests(TestCase):
     def test_emission_points_derive_from_builder(self):
         from apps.campaigns import services as campaign_services
         from apps.reports import views as report_views
+        from apps.reports import services as report_services
         from apps.tracking.serializers import (
             CampaignTrackingLinkSerializer)
         # Step 5 send path: no stored-URL emission, builder used.
@@ -208,10 +209,16 @@ class DerivedShortUrlTests(TestCase):
         self.assertIn('build_campaign_short_url', wrap_src)
         # Recipient click activity: first-party branch derives
         # (legacy recipient_link branch intentionally untouched).
+        # The emission point lives in the shared row builder consumed
+        # by the API view and the Excel workbook export alike.
         clicks_src = inspect.getsource(
-            report_views.CampaignReportLinkClicksView.get)
+            report_services.get_click_activity_rows)
         self.assertNotIn('.link.short_url', clicks_src)
         self.assertIn('e.recipient_link.short_url', clicks_src)
+        self.assertIn('build_campaign_short_url', clicks_src)
+        view_src = inspect.getsource(
+            report_views.CampaignReportLinkClicksView.get)
+        self.assertIn('get_click_activity_rows', view_src)
         # Shareable report derives.
         share_src = inspect.getsource(
             report_views.CampaignReportShareableLinksView.get)

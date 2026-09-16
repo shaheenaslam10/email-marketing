@@ -8,6 +8,10 @@
         <i data-lucide="plus-circle" class="w-4 h-4"></i>
         Create New Campaign
     </a>
+    <button onclick="openReportsDialog()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl shadow-md shadow-emerald-500/20 flex items-center gap-2 transition-all">
+        <i data-lucide="file-down" class="w-4 h-4"></i>
+        Export Reports
+    </button>
 </div>
 {% endblock %}
 
@@ -270,6 +274,104 @@
         </div>
     </div>
 </div>
+
+<!-- Modal: Export Reports (All / Selected Campaigns) -->
+<div id="reports-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100">
+        <div class="sticky top-0 bg-slate-900 text-white px-6 py-4 rounded-t-3xl flex items-center justify-between z-10">
+            <div>
+                <h3 class="font-bold text-base">Export Reports</h3>
+                <p class="text-xs text-slate-300">One Excel workbook across all or selected campaigns.</p>
+            </div>
+            <button onclick="closeReportsDialog()" class="p-1.5 hover:bg-slate-700 rounded-lg transition-all" aria-label="Close">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="px-6 py-5 space-y-6">
+            <div id="reports-error" class="hidden px-4 py-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl"></div>
+
+            <!-- A. Campaigns -->
+            <section>
+                <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">A. Campaigns</h4>
+                <div class="flex items-center gap-5 text-xs font-semibold text-slate-700">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="reports-scope" value="all" checked onchange="onReportsScopeChange()" class="accent-emerald-600">
+                        All Campaigns
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="reports-scope" value="select" onchange="onReportsScopeChange()" class="accent-emerald-600">
+                        Select Campaigns
+                    </label>
+                </div>
+                <div id="reports-campaign-picker" class="hidden mt-3 border border-slate-200 rounded-xl p-3 bg-slate-50">
+                    <input type="text" id="reports-campaign-search" oninput="renderReportsCampaignList()" placeholder="Search campaigns..." class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 mb-2">
+                    <div class="flex items-center gap-3 mb-2 text-[11px] font-bold">
+                        <button onclick="reportsSelectAll(true)" class="text-emerald-700 hover:text-emerald-800">Select all</button>
+                        <button onclick="reportsSelectAll(false)" class="text-slate-500 hover:text-slate-700">Clear all</button>
+                        <span id="reports-campaign-count" class="ml-auto text-slate-500"></span>
+                    </div>
+                    <div id="reports-campaign-list" class="max-h-44 overflow-y-auto space-y-1 bg-white border border-slate-200 rounded-xl p-2"></div>
+                </div>
+            </section>
+
+            <!-- B. Recipient filter -->
+            <section>
+                <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">B. Recipient filter</h4>
+                <select id="reports-lifecycle" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <option value="all">All recipients</option>
+                    <option value="completed">Completed</option>
+                    <option value="incomplete">Incomplete / UNUSED</option>
+                    <option value="opened">Opened</option>
+                    <option value="not_opened">Not opened</option>
+                    <option value="clicked">Clicked</option>
+                    <option value="not_clicked">Not clicked</option>
+                    <option value="clicked_not_completed">Clicked but not completed</option>
+                    <option value="unengaged_incomplete">Never opened/clicked, incomplete</option>
+                    <option value="reminder_eligible">Reminder eligible</option>
+                    <option value="reminder_suppressed">Reminder suppressed</option>
+                </select>
+            </section>
+
+            <!-- C. Search & dates -->
+            <section>
+                <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">C. Search &amp; date range</h4>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input type="text" id="reports-job-id" placeholder="Job ID contains..." class="px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <label class="text-xs text-slate-600 font-semibold">From
+                        <input type="date" id="reports-date-from" class="mt-1 w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    </label>
+                    <label class="text-xs text-slate-600 font-semibold">To
+                        <input type="date" id="reports-date-to" class="mt-1 w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    </label>
+                </div>
+                <p class="mt-2 text-[11px] text-slate-400">Date range uses the report's click-date semantics (first click on/after From, last click on/before To).</p>
+            </section>
+
+            <!-- D. Workbook content -->
+            <section>
+                <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">D. Workbook content</h4>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-semibold text-slate-700">
+                    <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="reports-sec-summary" checked class="accent-emerald-600"> Executive Summary</label>
+                    <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="reports-sec-campaign-info" checked class="accent-emerald-600"> Campaign Information</label>
+                    <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="reports-sec-lifecycle" checked class="accent-emerald-600"> Recipient Lifecycle</label>
+                    <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="reports-sec-clicks" checked class="accent-emerald-600"> Click Activity</label>
+                    <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="reports-sec-incomplete" checked class="accent-emerald-600"> Incomplete / UNUSED</label>
+                    <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="reports-sec-reminders" checked class="accent-emerald-600"> Reminder Activity</label>
+                </div>
+            </section>
+        </div>
+
+        <div class="sticky bottom-0 bg-slate-50 px-6 py-4 rounded-b-3xl flex items-center justify-end gap-2 border-t border-slate-200">
+            <button onclick="closeReportsDialog()" class="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-bold text-xs rounded-xl">Cancel</button>
+            <button id="reports-generate" onclick="generateReportsExport()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2">
+                <span id="reports-spinner" class="hidden animate-spin inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full"></span>
+                <i data-lucide="file-down" class="w-3.5 h-3.5" id="reports-icon"></i>
+                <span id="reports-generate-label">Generate Excel Report</span>
+            </button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_head %}
@@ -285,6 +387,7 @@
     }
 </style>
 {% endblock %}
+
 
 {% block extra_scripts %}
 <script>
@@ -849,6 +952,180 @@
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
+    }
+
+    // ---------------- Export Reports dialog (All / Selected Campaigns) ----------------
+    let reportsCampaignsCache = null;
+    let reportsBusy = false;
+
+    function openReportsDialog() {
+        document.getElementById('reports-modal').classList.remove('hidden');
+        document.getElementById('reports-error').classList.add('hidden');
+        onReportsScopeChange();
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function closeReportsDialog() {
+        if (reportsBusy) return;
+        document.getElementById('reports-modal').classList.add('hidden');
+    }
+
+    function onReportsScopeChange() {
+        const scope = document.querySelector('input[name="reports-scope"]:checked').value;
+        const picker = document.getElementById('reports-campaign-picker');
+        if (scope === 'select') {
+            picker.classList.remove('hidden');
+            loadReportsCampaigns();
+        } else {
+            picker.classList.add('hidden');
+        }
+    }
+
+    async function loadReportsCampaigns() {
+        const list = document.getElementById('reports-campaign-list');
+        if (reportsCampaignsCache) {
+            renderReportsCampaignList();
+            return;
+        }
+        list.innerHTML = '<p class="py-4 text-center text-slate-400 text-xs">Loading campaigns...</p>';
+        try {
+            const res = await fetch('/api/campaigns/?page_size=1000');
+            const data = await res.json();
+            reportsCampaignsCache = (data.results || data || []).map(c => ({
+                id: c.id,
+                name: c.name || ('Campaign #' + c.id),
+                status: c.status || '',
+                checked: true
+            }));
+            renderReportsCampaignList();
+        } catch (err) {
+            console.error(err);
+            list.innerHTML = '<p class="py-4 text-center text-rose-500 text-xs">Failed to load campaigns.</p>';
+        }
+    }
+
+    function renderReportsCampaignList() {
+        const list = document.getElementById('reports-campaign-list');
+        const q = document.getElementById('reports-campaign-search').value.trim().toLowerCase();
+        const items = (reportsCampaignsCache || []).filter(c => !q || c.name.toLowerCase().includes(q));
+        if (!items.length) {
+            list.innerHTML = '<p class="py-4 text-center text-slate-400 text-xs">No campaigns found.</p>';
+        } else {
+            list.innerHTML = '';
+            for (const c of items) {
+                const label = document.createElement('label');
+                label.className = 'flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded-lg cursor-pointer text-xs font-semibold text-slate-700';
+                const box = document.createElement('input');
+                box.type = 'checkbox';
+                box.className = 'accent-emerald-600';
+                box.checked = c.checked;
+                box.onchange = () => { c.checked = box.checked; updateReportsCampaignCount(); };
+                label.appendChild(box);
+                const span = document.createElement('span');
+                span.textContent = c.name + (c.status ? ` (${c.status})` : '');
+                label.appendChild(span);
+                list.appendChild(label);
+            }
+        }
+        updateReportsCampaignCount();
+    }
+
+    function updateReportsCampaignCount() {
+        const n = (reportsCampaignsCache || []).filter(c => c.checked).length;
+        document.getElementById('reports-campaign-count').textContent = n + ' selected';
+    }
+
+    function reportsSelectAll(select) {
+        (reportsCampaignsCache || []).forEach(c => { c.checked = select; });
+        renderReportsCampaignList();
+    }
+
+    function showReportsError(message) {
+        const box = document.getElementById('reports-error');
+        box.textContent = message;
+        box.classList.remove('hidden');
+    }
+
+    async function generateReportsExport() {
+        if (reportsBusy) return;
+        const scope = document.querySelector('input[name="reports-scope"]:checked').value;
+        const payload = {
+            filters: {
+                lifecycle: document.getElementById('reports-lifecycle').value,
+                job_id: document.getElementById('reports-job-id').value.trim(),
+                date_from: document.getElementById('reports-date-from').value,
+                date_to: document.getElementById('reports-date-to').value,
+            },
+            sections: {
+                summary: document.getElementById('reports-sec-summary').checked,
+                campaign_info: document.getElementById('reports-sec-campaign-info').checked,
+                lifecycle: document.getElementById('reports-sec-lifecycle').checked,
+                clicks: document.getElementById('reports-sec-clicks').checked,
+                incomplete: document.getElementById('reports-sec-incomplete').checked,
+                reminders: document.getElementById('reports-sec-reminders').checked,
+            }
+        };
+        if (scope === 'all') {
+            payload.scope = 'all';
+        } else {
+            const ids = (reportsCampaignsCache || []).filter(c => c.checked).map(c => c.id);
+            if (!ids.length) {
+                showReportsError('Select at least one campaign.');
+                return;
+            }
+            payload.campaign_ids = ids;
+        }
+
+        reportsBusy = true;
+        document.getElementById('reports-error').classList.add('hidden');
+        const btn = document.getElementById('reports-generate');
+        btn.disabled = true;
+        document.getElementById('reports-spinner').classList.remove('hidden');
+        document.getElementById('reports-icon').classList.add('hidden');
+        document.getElementById('reports-generate-label').textContent = 'Generating...';
+        try {
+            const res = await fetch('/api/campaigns/report/xlsx/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) {
+                let message = 'Export failed.';
+                try {
+                    const data = await res.json();
+                    message = data.error || message;
+                } catch (e) { /* keep default */ }
+                showReportsError(message);
+                return;
+            }
+            const blob = await res.blob();
+            let filename = 'Campaign_Report.xlsx';
+            const disposition = res.headers.get('Content-Disposition') || '';
+            const match = disposition.match(/filename="?([^";]+)"?/);
+            if (match) filename = match[1];
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+            // Hide directly: closeReportsDialog() is busy-guarded and would no-op here.
+            document.getElementById('reports-modal').classList.add('hidden');
+        } catch (err) {
+            console.error(err);
+            showReportsError('Export failed. Please try again.');
+        } finally {
+            reportsBusy = false;
+            btn.disabled = false;
+            document.getElementById('reports-spinner').classList.add('hidden');
+            document.getElementById('reports-icon').classList.remove('hidden');
+            document.getElementById('reports-generate-label').textContent = 'Generate Excel Report';
+        }
     }
 
     loadCampaigns(1);

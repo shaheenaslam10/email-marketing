@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block page_title %}Campaign Analytics: {{ campaign.name }}{% endblock %}
+{% block page_title %}<span class="block text-[11px] font-bold uppercase tracking-widest text-slate-400 leading-tight">Campaign Report</span><span class="tracking-tight">{{ campaign.name }}</span>{% endblock %}
 
 {% block page_badge %}
 <span class="px-2.5 py-1 rounded-full text-xs font-bold {% if campaign.status == 'ACTIVE' %}bg-emerald-100 text-emerald-700{% else %}bg-blue-100 text-blue-700{% endif %}">
@@ -15,14 +15,19 @@
         Send Reminder Now
     </button>
     <div class="h-6 w-px bg-slate-200 mx-1"></div>
-    <a href="/api/campaigns/{{ campaign.id }}/export/xlsx/" class="px-3 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5">
-        <i data-lucide="sheet" class="w-3.5 h-3.5 text-emerald-600"></i>
-        Export XLSX
-    </a>
-    <a href="/api/campaigns/{{ campaign.id }}/export/csv/" class="px-3 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5">
-        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-blue-600"></i>
+    <!-- NOTE: the legacy single-sheet Export XLSX download was removed from this
+         toolbar because Export Report supersedes it (multi-section workbook
+         with filters). The /export/xlsx/ endpoint itself remains available
+         for backward compatibility. -->
+    <button onclick="openExportDialog()" title="Configure and download the Excel workbook for {{ campaign.name }}" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1.5 transition-all">
+        <i data-lucide="file-down" class="w-3.5 h-3.5"></i>
+        Export Report
+    </button>
+    <button id="export-csv-btn" onclick="exportCampaignCsv()" title="Download recipient-level CSV for {{ campaign.name }} (respects the Link Clicks table filters)" class="px-3 py-2 bg-white hover:bg-slate-50 disabled:opacity-60 border border-slate-200 text-slate-700 font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all">
+        <span id="export-csv-spinner" class="hidden animate-spin inline-block w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full"></span>
+        <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-blue-600" id="export-csv-icon"></i>
         Export CSV
-    </a>
+    </button>
 </div>
 {% endblock %}
 
@@ -36,6 +41,9 @@
             <div class="text-xs text-slate-500 flex items-center gap-4 pt-1 flex-wrap">
                 <span>Sender: <strong>{{ campaign.sender.display_from }}</strong></span>
                 <span>Type: <strong>{{ campaign.get_campaign_type_display }}</strong></span>
+                <span>Started: <strong>{{ campaign.started_at|date:"d M Y"|default:"Not started" }}</strong></span>
+                <span>Groups: <strong>{{ campaign.groups.count }}</strong></span>
+                <span>Contacts: <strong>{{ target_contacts_count }}</strong></span>
                 {% if campaign.odk_dataset %}
                 <span>ODK Entity List: <strong class="text-emerald-700">{{ campaign.odk_dataset.name }}</strong></span>
                 {% elif campaign.odk_form %}
@@ -81,19 +89,19 @@
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div class="bg-gradient-to-br from-emerald-500 to-teal-600 text-white p-6 rounded-3xl shadow-lg shadow-emerald-500/20">
                 <span class="text-xs font-bold uppercase tracking-wider text-emerald-100 block">USED (Survey Completed)</span>
-                <div class="mt-2 text-4xl font-extrabold" id="rep-kpi-used">0</div>
+                <div class="mt-2 text-4xl font-extrabold tabular-nums" id="rep-kpi-used">0</div>
                 <div class="mt-2 text-xs text-emerald-100 font-medium">Submissions synced via ODK Central</div>
             </div>
 
             <div class="bg-gradient-to-br from-amber-500 to-orange-600 text-white p-6 rounded-3xl shadow-lg shadow-amber-500/20">
                 <span class="text-xs font-bold uppercase tracking-wider text-amber-100 block">UNUSED (Survey Pending)</span>
-                <div class="mt-2 text-4xl font-extrabold" id="rep-kpi-unused">0</div>
+                <div class="mt-2 text-4xl font-extrabold tabular-nums" id="rep-kpi-unused">0</div>
                 <div class="mt-2 text-xs text-amber-100 font-medium">Eligible for automated reminders</div>
             </div>
 
             <div class="bg-gradient-to-br from-blue-600 to-indigo-700 text-white p-6 rounded-3xl shadow-lg shadow-blue-500/20">
                 <span class="text-xs font-bold uppercase tracking-wider text-blue-100 block">COMPLETION RATE</span>
-                <div class="mt-2 text-4xl font-extrabold" id="rep-kpi-completion">0%</div>
+                <div class="mt-2 text-4xl font-extrabold tabular-nums" id="rep-kpi-completion">0%</div>
                 <div class="mt-2 text-xs text-blue-100 font-medium">Used / Initial Eligible contacts</div>
             </div>
         </div>
@@ -102,22 +110,22 @@
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
                 <span class="text-[11px] font-bold text-slate-500 uppercase">Delivered</span>
-                <div class="text-2xl font-extrabold text-slate-900 mt-1" id="rep-card-delivered">0</div>
+                <div class="text-2xl font-extrabold text-slate-900 mt-1 tabular-nums" id="rep-card-delivered">0</div>
                 <div class="text-xs font-semibold text-emerald-600 mt-1" id="rep-rate-delivered">0% rate</div>
             </div>
             <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
                 <span class="text-[11px] font-bold text-slate-500 uppercase">Unique Opens</span>
-                <div class="text-2xl font-extrabold text-slate-900 mt-1" id="rep-card-opens">0</div>
+                <div class="text-2xl font-extrabold text-slate-900 mt-1 tabular-nums" id="rep-card-opens">0</div>
                 <div class="text-xs font-semibold text-blue-600 mt-1" id="rep-rate-opens">0% rate</div>
             </div>
             <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm cursor-pointer hover:border-indigo-300 transition-colors" onclick="switchTab('link_clicks')">
                 <span class="text-[11px] font-bold text-slate-500 uppercase">Unique Clicks</span>
-                <div class="text-2xl font-extrabold text-slate-900 mt-1" id="rep-card-clicks">0</div>
+                <div class="text-2xl font-extrabold text-slate-900 mt-1 tabular-nums" id="rep-card-clicks">0</div>
                 <div class="text-xs font-semibold text-indigo-600 mt-1" id="rep-rate-clicks">0% CTR &rarr;</div>
             </div>
             <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
                 <span class="text-[11px] font-bold text-slate-500 uppercase">Unsubscribes</span>
-                <div class="text-2xl font-extrabold text-slate-900 mt-1" id="rep-card-unsub">0</div>
+                <div class="text-2xl font-extrabold text-slate-900 mt-1 tabular-nums" id="rep-card-unsub">0</div>
                 <div class="text-xs font-semibold text-slate-500 mt-1" id="rep-rate-unsub">0% rate</div>
             </div>
         </div>
@@ -680,6 +688,98 @@
                     <tbody id="still-unused-tbody" class="divide-y divide-slate-100"></tbody>
                 </table>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Export Report dialog: single-campaign Excel workbook (current campaign only) -->
+<div id="export-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-slate-900/50" onclick="closeExportDialog()"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="sticky top-0 bg-slate-900 text-white px-6 py-4 rounded-t-2xl flex items-center justify-between">
+            <div>
+                <h3 class="font-bold text-base">Export Campaign Report</h3>
+                <p class="text-xs text-slate-300">Single-campaign Excel workbook: summary, lifecycle, clicks, follow-up &amp; reminders.</p>
+            </div>
+            <button onclick="closeExportDialog()" class="p-1.5 hover:bg-slate-700 rounded-lg transition-all" aria-label="Close">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="px-6 py-5 space-y-6">
+            <div id="export-error" class="hidden px-4 py-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl"></div>
+
+            <!-- A. Campaign (read-only: this report covers the current campaign only) -->
+            <section>
+                <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2"><span class="inline-flex items-center justify-center w-4 h-4 mr-1 rounded-md bg-emerald-100 text-emerald-700 text-[10px]">A</span>Campaign</h4>
+                <div id="export-campaign-card" class="flex items-center gap-3 px-4 py-3 bg-emerald-50/60 border border-emerald-100 rounded-xl">
+                    <div class="p-2 bg-emerald-600 text-white rounded-lg shrink-0"><i data-lucide="megaphone" class="w-4 h-4"></i></div>
+                    <div class="min-w-0">
+                        <div class="text-sm font-bold text-slate-900 truncate">{{ campaign.name }}</div>
+                        <div class="text-[11px] text-slate-500 font-semibold">ID #{{ campaign.id }} &middot; {{ campaign.status }} &middot; This export covers this campaign only</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- B. Recipient filter -->
+            <section>
+                <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2"><span class="inline-flex items-center justify-center w-4 h-4 mr-1 rounded-md bg-emerald-100 text-emerald-700 text-[10px]">B</span>Recipient filter</h4>
+                <select id="export-lifecycle" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <option value="all">All recipients</option>
+                    <option value="completed">Completed</option>
+                    <option value="incomplete">Incomplete / UNUSED</option>
+                    <option value="opened">Opened</option>
+                    <option value="not_opened">Not opened</option>
+                    <option value="clicked">Clicked</option>
+                    <option value="not_clicked">Not clicked</option>
+                    <option value="clicked_not_completed">Clicked but not completed</option>
+                    <option value="unengaged_incomplete">Never opened/clicked, incomplete</option>
+                    <option value="reminder_eligible">Reminder eligible</option>
+                    <option value="reminder_suppressed">Reminder suppressed</option>
+                </select>
+                <label class="mt-2 flex items-start gap-2 text-xs text-slate-600 cursor-pointer">
+                    <input type="checkbox" id="export-use-current" checked class="mt-0.5 accent-emerald-600">
+                    <span>Also apply the current on-page filters <span id="export-current-hint" class="text-slate-400"></span></span>
+                </label>
+            </section>
+
+            <!-- C. Search / link / dates -->
+            <section>
+                <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2"><span class="inline-flex items-center justify-center w-4 h-4 mr-1 rounded-md bg-emerald-100 text-emerald-700 text-[10px]">C</span>Search, link &amp; dates</h4>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <select id="export-link" class="px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        <option value="">All Tracked URLs</option>
+                    </select>
+                    <label class="text-xs text-slate-600 font-semibold">From
+                        <input type="date" id="export-date-from" class="mt-1 w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    </label>
+                    <label class="text-xs text-slate-600 font-semibold">To
+                        <input type="date" id="export-date-to" class="mt-1 w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    </label>
+                </div>
+            </section>
+
+            <!-- D. Workbook content -->
+            <section>
+                <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2"><span class="inline-flex items-center justify-center w-4 h-4 mr-1 rounded-md bg-emerald-100 text-emerald-700 text-[10px]">D</span>Workbook content</h4>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-semibold text-slate-700">
+                    <label class="flex items-center gap-2.5 cursor-pointer px-2.5 py-2 rounded-lg hover:bg-slate-50 transition-colors"><input type="checkbox" id="export-sec-summary" checked class="accent-emerald-600"> Executive Summary</label>
+                    <label class="flex items-center gap-2.5 cursor-pointer px-2.5 py-2 rounded-lg hover:bg-slate-50 transition-colors"><input type="checkbox" id="export-sec-campaign-info" checked class="accent-emerald-600"> Campaign Information</label>
+                    <label class="flex items-center gap-2.5 cursor-pointer px-2.5 py-2 rounded-lg hover:bg-slate-50 transition-colors"><input type="checkbox" id="export-sec-lifecycle" checked class="accent-emerald-600"> Recipient Lifecycle</label>
+                    <label class="flex items-center gap-2.5 cursor-pointer px-2.5 py-2 rounded-lg hover:bg-slate-50 transition-colors"><input type="checkbox" id="export-sec-clicks" checked class="accent-emerald-600"> Click Activity</label>
+                    <label class="flex items-center gap-2.5 cursor-pointer px-2.5 py-2 rounded-lg hover:bg-slate-50 transition-colors"><input type="checkbox" id="export-sec-incomplete" checked class="accent-emerald-600"> Incomplete / UNUSED</label>
+                    <label class="flex items-center gap-2.5 cursor-pointer px-2.5 py-2 rounded-lg hover:bg-slate-50 transition-colors"><input type="checkbox" id="export-sec-reminders" checked class="accent-emerald-600"> Reminder Activity</label>
+                </div>
+            </section>
+        </div>
+
+        <div class="sticky bottom-0 bg-slate-50 px-6 py-4 rounded-b-2xl flex items-center justify-end gap-2 border-t border-slate-200">
+            <button onclick="closeExportDialog()" class="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-bold text-xs rounded-xl">Cancel</button>
+            <button id="export-generate" onclick="generateExportReport()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2">
+                <span id="export-spinner" class="hidden animate-spin inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full"></span>
+                <i data-lucide="file-down" class="w-3.5 h-3.5" id="export-icon"></i>
+                <span id="export-generate-label">Generate Excel Report</span>
+            </button>
         </div>
     </div>
 </div>
@@ -1464,6 +1564,168 @@
             }
         } catch (err) {
             console.error(err);
+        }
+    }
+
+    // ---------------- Campaign CSV export (recipient roster) ----------------
+    let exportCsvBusy = false;
+
+    async function exportCampaignCsv() {
+        if (exportCsvBusy) return;
+        // Respect the Link Clicks table filters (same params as the table export).
+        const status = document.getElementById('lt-filter-status');
+        const contactStatus = document.getElementById('lt-filter-contact-status');
+        const linkId = document.getElementById('lt-filter-link');
+        const params = new URLSearchParams({
+            status: status ? status.value : 'all',
+            contact_status: contactStatus ? contactStatus.value : 'all',
+            link_id: linkId ? linkId.value : '',
+        });
+        exportCsvBusy = true;
+        const btn = document.getElementById('export-csv-btn');
+        btn.disabled = true;
+        document.getElementById('export-csv-spinner').classList.remove('hidden');
+        document.getElementById('export-csv-icon').classList.add('hidden');
+        try {
+            const res = await fetch(`/api/campaigns/${campaignId}/export/csv/?${params.toString()}`);
+            if (!res.ok) throw new Error('CSV export failed');
+            const blob = await res.blob();
+            let filename = 'Campaign_Report.csv';
+            const match = (res.headers.get('Content-Disposition') || '').match(/filename="?([^";]+)"?/);
+            if (match) filename = match[1];
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error(err);
+            if (typeof showToast === 'function') showToast('CSV export failed. Please try again.', 'error');
+        } finally {
+            exportCsvBusy = false;
+            btn.disabled = false;
+            document.getElementById('export-csv-spinner').classList.add('hidden');
+            document.getElementById('export-csv-icon').classList.remove('hidden');
+        }
+    }
+
+    // ---------------- Export Report dialog (current campaign only) ----------------
+    let exportBusy = false;
+
+    function openExportDialog() {
+        document.getElementById('export-modal').classList.remove('hidden');
+        document.getElementById('export-error').classList.add('hidden');
+        // Prefill from the current on-page filters.
+        const link = document.getElementById('lt-filter-link');
+        const status = document.getElementById('lt-filter-status');
+        const contactStatus = document.getElementById('lt-filter-contact-status');
+        const exportLink = document.getElementById('export-link');
+        exportLink.innerHTML = '<option value="">All Tracked URLs</option>';
+        if (link) {
+            for (const opt of link.options) {
+                if (!opt.value) continue;
+                const clone = document.createElement('option');
+                clone.value = opt.value;
+                clone.textContent = opt.textContent;
+                exportLink.appendChild(clone);
+            }
+            exportLink.value = link.value;
+        }
+        const statusLabel = status ? status.options[status.selectedIndex].textContent : 'All';
+        const contactLabel = contactStatus ? contactStatus.options[contactStatus.selectedIndex].textContent : 'All';
+        document.getElementById('export-current-hint').textContent = `(${statusLabel} / ${contactLabel})`;
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function closeExportDialog() {
+        if (exportBusy) return;
+        document.getElementById('export-modal').classList.add('hidden');
+    }
+
+    function showExportError(message) {
+        const box = document.getElementById('export-error');
+        box.textContent = message;
+        box.classList.remove('hidden');
+    }
+
+    async function generateExportReport() {
+        if (exportBusy) return;
+        const campaignIds = [campaignId];
+        const useCurrent = document.getElementById('export-use-current').checked;
+        const filters = {
+            lifecycle: document.getElementById('export-lifecycle').value,
+            link_id: document.getElementById('export-link').value,
+            date_from: document.getElementById('export-date-from').value,
+            date_to: document.getElementById('export-date-to').value,
+        };
+        if (useCurrent) {
+            const status = document.getElementById('lt-filter-status');
+            const contactStatus = document.getElementById('lt-filter-contact-status');
+            filters.status = status ? status.value : 'all';
+            filters.contact_status = contactStatus ? contactStatus.value : 'all';
+        }
+        const sections = {
+            summary: document.getElementById('export-sec-summary').checked,
+            campaign_info: document.getElementById('export-sec-campaign-info').checked,
+            lifecycle: document.getElementById('export-sec-lifecycle').checked,
+            clicks: document.getElementById('export-sec-clicks').checked,
+            incomplete: document.getElementById('export-sec-incomplete').checked,
+            reminders: document.getElementById('export-sec-reminders').checked,
+        };
+
+        exportBusy = true;
+        document.getElementById('export-error').classList.add('hidden');
+        const btn = document.getElementById('export-generate');
+        btn.disabled = true;
+        document.getElementById('export-spinner').classList.remove('hidden');
+        document.getElementById('export-icon').classList.add('hidden');
+        document.getElementById('export-generate-label').textContent = 'Generating...';
+        try {
+            const res = await fetch('/api/campaigns/report/xlsx/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ campaign_ids: campaignIds, filters: filters, sections: sections })
+            });
+            if (!res.ok) {
+                let message = 'Export failed.';
+                try {
+                    const data = await res.json();
+                    message = data.error || message;
+                } catch (e) { /* keep default */ }
+                showExportError(message);
+                return;
+            }
+            const blob = await res.blob();
+            let filename = 'Campaign_Report.xlsx';
+            const disposition = res.headers.get('Content-Disposition') || '';
+            const match = disposition.match(/filename="?([^";]+)"?/);
+            if (match) filename = match[1];
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+            // Hide directly: closeExportDialog() is busy-guarded and would no-op here.
+            document.getElementById('export-modal').classList.add('hidden');
+            if (typeof showToast === 'function') showToast('Excel report downloaded.');
+        } catch (err) {
+            console.error(err);
+            showExportError('Export failed. Please try again.');
+        } finally {
+            exportBusy = false;
+            btn.disabled = false;
+            document.getElementById('export-spinner').classList.add('hidden');
+            document.getElementById('export-icon').classList.remove('hidden');
+            document.getElementById('export-generate-label').textContent = 'Generate Excel Report';
         }
     }
 
